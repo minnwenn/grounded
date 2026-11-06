@@ -1,0 +1,17 @@
+{
+  "name": "bean-again",
+  "private": true,
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "demo": "node demo.js",
+    "demo:next-day": "node demo.js next-day",
+    "demo:evening": "node demo.js evening",
+    "demo:morning": "node demo.js morning",
+    "demo:reset": "node demo.js reset",
+    "db:init": "node --no-warnings db/init.js",
+    "db:reset": "node --no-warnings db/init.js --force"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

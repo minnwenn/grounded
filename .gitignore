@@ -1,0 +1,6 @@
+.env
+node_modules
+.DS_Store
+.demo-state.json
+db/*.db
+db/*.db-*
