@@ -1,4 +1,4 @@
--- Bean Again database (SQLite). Photos are never stored: only the check result is kept.
+-- Grounded database (SQLite). Photos are never stored: only the check result is kept.
 PRAGMA foreign_keys = ON;
 
 -- ---------- people and organisations ----------
@@ -32,13 +32,23 @@ CREATE TABLE classes (
 );
 
 CREATE TABLE students (
-  id          INTEGER PRIMARY KEY,
-  class_id    INTEGER NOT NULL REFERENCES classes(id),
-  name        TEXT NOT NULL,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  last_active TEXT
+  id             INTEGER PRIMARY KEY,
+  class_id       INTEGER NOT NULL REFERENCES classes(id),
+  name           TEXT NOT NULL,
+  password_hash  TEXT NOT NULL,                    -- scrypt, see db/auth.js
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  last_active    TEXT                              -- 'YYYY-MM-DD' on the app clock (includes the demo offset)
 );
-CREATE INDEX idx_students_class ON students(class_id);
+CREATE UNIQUE INDEX idx_students_name ON students(class_id, name COLLATE NOCASE);
+
+-- Login sessions for both kinds of account. Only a hash of the cookie token is stored.
+CREATE TABLE sessions (
+  token_hash  TEXT PRIMARY KEY,
+  kind        TEXT NOT NULL CHECK (kind IN ('user','student')),
+  user_id     INTEGER NOT NULL,                    -- users.id or students.id, depending on kind
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- ---------- content (edited by CoffeeBot, not by students) ----------
 CREATE TABLE levels (
@@ -103,6 +113,7 @@ CREATE TABLE student_projects (
   student_id    INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
   project_id    TEXT NOT NULL REFERENCES projects(id),
   steps_done    INTEGER NOT NULL DEFAULT 0 CHECK (steps_done BETWEEN 0 AND 5),
+  fails         INTEGER NOT NULL DEFAULT 0,        -- failed photo checks since the last pass or teacher review
   started_at    TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at  TEXT,
   PRIMARY KEY (student_id, project_id)
@@ -115,6 +126,7 @@ CREATE TABLE photo_submissions (
   verdict     TEXT NOT NULL CHECK (verdict IN ('pass','unsure','fail')),
   confidence  REAL,
   feedback    TEXT,
+  note        TEXT,                                -- why a teacher is asked to look, e.g. 'AI unsure (confidence 0.42)'
   mode        TEXT NOT NULL CHECK (mode IN ('ai','demo')),
   status      TEXT NOT NULL CHECK (status IN ('approved','pending','redo','rejected')),
   reviewed_by INTEGER REFERENCES users(id),        -- teacher

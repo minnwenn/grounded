@@ -94,7 +94,7 @@ var CH = (function () {
       table([o.xName || ""].concat(o.series.map(function (s) { return s.name; })), o.labels.map(function (lb, i) { return [lb].concat(o.series.map(function (s) { return o.fmt(s.values[i]); })); }));
   }
 
-  /* stacked reuse-rate columns: existing solid (0..low), existing range band (low..high), Bean Again on top */
+  /* stacked reuse-rate columns: existing solid (0..low), existing range band (low..high), Grounded on top */
   function reuse(o) {
     var W = o.width, H = 260, L = 48, R = 16, T = 26, B = 34, n = o.months.length;
     var top = Math.max.apply(null, o.months.map(function (m) { return o.high + m.share; }));
@@ -111,13 +111,13 @@ var CH = (function () {
       g += '<rect x="' + x + '" y="' + yl + '" width="' + bw + '" height="' + (y0 - yl) + '" fill="#d9c9a0"' + tip(m.label + "\nCoffeeBot existing reuse: at least " + o.low + "%") + "/>";
       g += '<rect x="' + x + '" y="' + yh + '" width="' + bw + '" height="' + Math.max(0, yl - yh - gap) + '" fill="url(#hatch)"' + tip(m.label + "\nCoffeeBot existing reuse: " + o.low + "–" + o.high + "% (range)") + "/>";
       var ph = Math.max(0, yh - yb - gap);
-      g += '<path d="' + colPath(x, yb, bw, ph) + '" fill="' + SERIES[0] + '"' + tip(m.label + "\nBean Again verified: " + num(m.kg, 1) + " kg\n= +" + num(m.share, 2) + " percentage points") + "/>";
+      g += '<path d="' + colPath(x, yb, bw, ph) + '" fill="' + SERIES[0] + '"' + tip(m.label + "\nGrounded verified: " + num(m.kg, 1) + " kg\n= +" + num(m.share, 2) + " percentage points") + "/>";
       g += '<text x="' + (x + bw / 2) + '" y="' + (yb - 8) + '" text-anchor="middle" class="lbl">+' + num(m.share, 1) + "%</text>";
       g += '<text x="' + (x + bw / 2) + '" y="' + (H - 10) + '" text-anchor="middle" class="ax">' + esc(m.label) + "</text>";
     });
-    return legend([{ name: "CoffeeBot existing (lower bound)", color: "#d9c9a0" }, { name: "Existing range (" + o.low + "–" + o.high + "%)", color: "#efe3bd", hatch: true }, { name: "Bean Again verified", color: SERIES[0] }]) +
+    return legend([{ name: "CoffeeBot existing (lower bound)", color: "#d9c9a0" }, { name: "Existing range (" + o.low + "–" + o.high + "%)", color: "#efe3bd", hatch: true }, { name: "Grounded verified", color: SERIES[0] }]) +
       '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="Reuse rate by month">' + g + "</svg>" +
-      table(["Month", "Bean Again verified kg", "Added share", "Total reuse"], o.months.map(function (m) { return [m.label, num(m.kg, 1), "+" + num(m.share, 2) + " pts", num(o.low + m.share, 1) + "–" + num(o.high + m.share, 1) + "%"]; }));
+      table(["Month", "Grounded verified kg", "Added share", "Total reuse"], o.months.map(function (m) { return [m.label, num(m.kg, 1), "+" + num(m.share, 2) + " pts", num(o.low + m.share, 1) + "–" + num(o.high + m.share, 1) + "%"]; }));
   }
 
   function ribbon(x0, a0, b0, x1, a1, b1) { // filled band from [a0,b0] at x0 to [a1,b1] at x1

@@ -1,4 +1,4 @@
-/* Static file server + /api/check photo verifier.
+/* Static file server, the JSON API (api.js) and the AI photo verifier.
  * The Anthropic API key lives only in this process (ANTHROPIC_API_KEY in .env); the browser never sees it.
  * Run:  npm install, then npm start
  */
@@ -6,6 +6,9 @@ const http = require("http"), fs = require("fs"), path = require("path"), vm = r
 const Anthropic = require("@anthropic-ai/sdk");
 const { zodOutputFormat } = require("@anthropic-ai/sdk/helpers/zod");
 const { z } = require("zod");
+const { openDb, assertSchema, createDb, syncContent, DEFAULT_FILE } = require("./db/init");
+const { createStore } = require("./db/store");
+const { createApi } = require("./api");
 
 const PORT = process.env.PORT || 3000;
 const MODEL = process.env.CHECK_MODEL || "claude-haiku-5-5";
@@ -25,12 +28,6 @@ let demo = {day: 0, evening: false, token: "t0"};
 try { demo = Object.assign(demo, JSON.parse(fs.readFileSync(DEMO_FILE, "utf8"))); } catch (e) {}
 const saveDemo = () => { try { fs.writeFileSync(DEMO_FILE, JSON.stringify(demo)); } catch (e) {} };
 const isLocal = ip => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip);
-
-const hits = new Map(); // naive per-IP rate limit: 20 checks / minute
-function limited(ip) {
-  const now = Date.now(), arr = (hits.get(ip) || []).filter(t => now - t < 60000);
-  arr.push(now); hits.set(ip, arr); return arr.length > 20;
-}
 
 function json(res, code, obj) {
   res.writeHead(code, {"Content-Type":"application/json","Cache-Control":"no-store"});
@@ -97,12 +94,34 @@ function logCheckError(e) {
   else console.error("check failed:", e.message);
 }
 
+/* ---------- database, game rules and API ---------- */
+const DB_FILE = DEFAULT_FILE;
+const fresh = !fs.existsSync(DB_FILE);
+const db = fresh ? createDb(DB_FILE, { demo: process.env.SEED_DEMO === "1" }) : openDb(DB_FILE);
+assertSchema(db, DB_FILE);
+syncContent(db, DATA);                                   // keep levels, projects, quiz in step with js/data.js
+if (fresh) console.log("Created a new database at " + DB_FILE + (process.env.SEED_DEMO === "1" ? " with demo data" : ". Add accounts with: node db/admin.js"));
+let RETAKES = 3;                                         // same rule the dashboard documents (aiRetakeLimit)
+try { RETAKES = vm.runInNewContext(fs.readFileSync(path.join(ROOT, "js/dashboard-data.js"), "utf8") + ";DASH.CONFIG.aiRetakeLimit", { localStorage: { getItem() { return null; } } }) || 3; } catch (e) {}
+const store = createStore(db, DATA, { demo: () => demo });
+const prod = process.env.NODE_ENV === "production" || !!process.env.RAILWAY_ENVIRONMENT || !!process.env.RENDER;
+const api = createApi({
+  db, store, hasAI: !!client, retakes: RETAKES,
+  trustProxy: process.env.TRUST_PROXY === "1" || prod,   // behind the host's proxy, use X-Forwarded-For for rate limits
+  secureCookies: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === "1" : prod,
+  aiCheck: (pid, b64) => check(PROJECTS[pid] || (() => { throw new Error("unknown project"); })(), b64).catch(e => { logCheckError(e); throw e; })
+});
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "same-origin");
+  if (url.pathname === "/healthz") { try { db.prepare("SELECT 1").get(); res.writeHead(200); return res.end("ok"); } catch (e) { res.writeHead(500); return res.end("db error"); } }
+  if (await api(req, res, url)) return;
   if (url.pathname === "/api/demo") {
     if (req.method === "GET") return json(res, 200, demo);
     if (req.method === "POST") {
-      if (!isLocal(req.socket.remoteAddress)) return json(res, 403, {error:"terminal on the server only"});
+      if (!isLocal(req.socket.remoteAddress) || req.headers["x-forwarded-for"]) return json(res, 403, {error:"terminal on the server only"});
       try {
         const b = JSON.parse(await readBody(req, 1000));
         if (b.action === "next-day") demo.day += Math.max(1, Math.min(60, Number(b.n) || 1)), demo.evening = false;
@@ -116,21 +135,6 @@ http.createServer(async (req, res) => {
       } catch (e) { return json(res, 400, {error:"bad request"}); }
     }
   }
-  if (req.method === "POST" && url.pathname === "/api/check") {
-    try {
-      if (!KEY) return json(res, 200, {mode:"demo"}); // client falls back to its demo check
-      if (limited(req.socket.remoteAddress)) return json(res, 429, {error:"slow down"});
-      const body = JSON.parse(await readBody(req, 1.2e6));
-      const project = PROJECTS[body.projectId];
-      const b64 = String(body.image || "");
-      if (!project) return json(res, 400, {error:"unknown project"});
-      if (!/^\/9j\/[A-Za-z0-9+/=]+$/.test(b64) || b64.length * 0.75 > 600 * 1024) return json(res, 400, {error:"expected a JPEG under 600 kB"});
-      return json(res, 200, await check(project, b64));
-    } catch (e) {
-      logCheckError(e);   // the browser then falls back to the quick check / teacher review
-      return json(res, 502, {error:"check failed"});
-    }
-  }
   if (req.method === "GET" && PUBLIC.test(url.pathname)) {
     const file = path.join(ROOT, url.pathname === "/" ? "index.html" : url.pathname);
     return fs.readFile(file, (err, buf) => {
@@ -140,4 +144,4 @@ http.createServer(async (req, res) => {
     });
   }
   res.writeHead(404); res.end("Not found");
-}).listen(PORT, () => console.log("Bean Again on http://localhost:" + PORT + (KEY ? " (AI photo check ON, " + MODEL + ")" : " (no ANTHROPIC_API_KEY: demo photo check)")));
+}).listen(PORT, () => console.log("Grounded on port " + PORT + (KEY ? " (AI photo check ON, " + MODEL + ")" : " (no ANTHROPIC_API_KEY: demo photo check)")));

@@ -1,67 +1,82 @@
 #!/usr/bin/env node
-/* Creates db/bean.db from schema.sql and seeds it from js/data.js.
- * Usage: npm run db:init   (add --force to wipe an existing database)
+/* Creates the database from schema.sql and keeps the learning content in step with js/data.js.
+ *
+ *   npm run db:init                  empty database: content only, no accounts. Create accounts with db/admin.js.
+ *   npm run db:init -- --demo        also adds a demo school, teacher, class and students (password "demo")
+ *   npm run db:reset                 wipe and recreate (add -- --demo for the demo data)
+ *
+ * The server calls createDb() itself on first start if the file is missing, and syncContent() on every start.
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const { DatabaseSync } = require("node:sqlite");
 const { hashPassword } = require("./auth");
+const { seedDemo } = require("./demo-seed");
 
 const ROOT = path.join(__dirname, "..");
-const FILE = process.env.DB_FILE || path.join(__dirname, "bean.db");
-if (fs.existsSync(FILE)) {
-  if (!process.argv.includes("--force")) { console.error(FILE + " already exists. Run with --force to wipe and recreate it."); process.exit(1); }
-  fs.rmSync(FILE);
+const DEFAULT_FILE = process.env.DB_FILE || path.join(__dirname, "grounded.db");
+const loadData = () => vm.runInNewContext(fs.readFileSync(path.join(ROOT, "js/data.js"), "utf8") + ";DATA");
+
+function openDb(file = DEFAULT_FILE) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new DatabaseSync(file);
+  db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+  return db;
 }
-const D = vm.runInNewContext(fs.readFileSync(path.join(ROOT, "js/data.js"), "utf8") + ";DATA");
-const db = new DatabaseSync(FILE);
-db.exec(fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8"));
 
-const run = (sql, ...a) => db.prepare(sql).run(...a);
-const id = r => Number(r.lastInsertRowid);
-db.exec("BEGIN");
-try {
-  // content
-  D.levels.forEach(l => run("INSERT INTO levels VALUES (?,?,?)", l.n, l.name, l.at));
-  D.projects.forEach(p => {
-    run("INSERT INTO projects VALUES (?,?,?,?,?,?,?,?)", p.id, p.name, p.level, p.pts, p.desc, p.photoPrompt, p.plant, p.color);
-    p.steps.forEach((s, i) => run("INSERT INTO project_steps VALUES (?,?,?,?)", p.id, i, s[0], s[1]));
+/* A database made before logins existed has no sessions table. Say so plainly instead of failing on the first query. */
+function assertSchema(db, file = DEFAULT_FILE) {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'").get()) {
+    console.error(file + " was created by an older version of Grounded and has no login tables.\n" +
+      "If it only holds demo data (it did before accounts existed), recreate it:  npm run db:reset:demo\n" +
+      "On a real database, do not reset it: ask for a migration instead.");
+    process.exit(1);
+  }
+}
+
+const tx = (db, fn) => { db.exec("BEGIN"); try { const r = fn(); db.exec("COMMIT"); return r; } catch (e) { db.exec("ROLLBACK"); throw e; } };
+
+/* Upserts levels, projects, weeks, accessories and the quiz bank from js/data.js. Safe to run on every start:
+ * rows are updated in place, so student progress that points at them is never touched. */
+function syncContent(db, D = loadData()) {
+  tx(db, () => {
+    const run = (sql, ...a) => db.prepare(sql).run(...a);
+    D.levels.forEach(l => run("INSERT INTO levels VALUES (?,?,?) ON CONFLICT(n) DO UPDATE SET name=excluded.name, at=excluded.at", l.n, l.name, l.at));
+    D.projects.forEach(p => {
+      run("INSERT INTO projects VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, level=excluded.level, pts=excluded.pts, description=excluded.description, photo_prompt=excluded.photo_prompt, plant=excluded.plant, color=excluded.color",
+        p.id, p.name, p.level, p.pts, p.desc, p.photoPrompt, p.plant, p.color);
+      run("DELETE FROM project_steps WHERE project_id=?", p.id);
+      p.steps.forEach((s, i) => run("INSERT INTO project_steps VALUES (?,?,?,?)", p.id, i, s[0], s[1]));
+    });
+    run("DELETE FROM week_projects");
+    D.weeks.forEach(w => {
+      run("INSERT INTO weeks VALUES (?,?,?) ON CONFLICT(n) DO UPDATE SET name=excluded.name, goal=excluded.goal", w.n, w.name, w.goal);
+      w.projects.forEach(pid => run("INSERT INTO week_projects VALUES (?,?)", w.n, pid));
+    });
+    D.accessories.forEach(a => run("INSERT INTO accessories VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, slot=excluded.slot, how=excluded.how, cost=excluded.cost, need=excluded.need, hint=excluded.hint",
+      a.id, a.name, a.slot, a.how, a.cost ?? null, a.need ?? null, a.hint ?? null));
+    // Quiz question id = position in data.js + 1. The text lives in data.js and is reviewed there.
+    D.quiz.forEach((q, i) => run("INSERT INTO quiz_questions(id,question,options,answer_idx,explanation,reviewed_at) VALUES (?,?,?,?,?,datetime('now')) ON CONFLICT(id) DO UPDATE SET question=excluded.question, options=excluded.options, answer_idx=excluded.answer_idx, explanation=excluded.explanation",
+      i + 1, q.q, JSON.stringify(q.o), q.a, q.why));
   });
-  D.weeks.forEach(w => {
-    run("INSERT INTO weeks VALUES (?,?,?)", w.n, w.name, w.goal);
-    w.projects.forEach(pid => run("INSERT INTO week_projects VALUES (?,?)", w.n, pid));
-  });
-  D.accessories.forEach(a => run("INSERT INTO accessories VALUES (?,?,?,?,?,?,?)", a.id, a.name, a.slot, a.how, a.cost ?? null, a.need ?? null, a.hint ?? null));
+}
 
-  // organisations
-  const cohort = {};
-  [...new Set(D.schools.map(s => s.cohort))].forEach(c => cohort[c] = id(run("INSERT INTO cohorts(name) VALUES (?)", c)));
-  const school = {};
-  D.schools.forEach(s => school[s.id] = id(run("INSERT INTO schools(name,cohort_id) VALUES (?,?)", s.name, cohort[s.cohort])));
+function createDb(file = DEFAULT_FILE, { demo = false } = {}) {
+  const db = openDb(file);
+  db.exec(fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8"));
+  syncContent(db);
+  if (demo) seedDemo(db, loadData());
+  return db;
+}
 
-  // demo users (password for both: "demo")
-  const teacher = id(run("INSERT INTO users(role,name,email,password_hash,school_id) VALUES ('teacher','Teacher','teacher@maple.example',?,?)", hashPassword("demo"), school.s1));
-  const cb = id(run("INSERT INTO users(role,name,email,password_hash) VALUES ('coffeebot','CoffeeBot team','team@coffeebot.example',?)", hashPassword("demo")));
+module.exports = { openDb, assertSchema, createDb, syncContent, DEFAULT_FILE, loadData };
 
-  // quiz bank: seeded as human-reviewed by the CoffeeBot user
-  D.quiz.forEach(q => run("INSERT INTO quiz_questions(question,options,answer_idx,explanation,reviewed_by,reviewed_at) VALUES (?,?,?,?,?,datetime('now'))", q.q, JSON.stringify(q.o), q.a, q.why, cb));
-
-  // demo class, roster and missions
-  const cls = id(run("INSERT INTO classes(school_id,teacher_id,name,code) VALUES (?,?,?,?)", school.s1, teacher, D.className, D.classCode));
-  D.students.forEach(st => {
-    const sid = id(run("INSERT INTO students(class_id,name,last_active) VALUES (?,?,datetime('now',?))", cls, st.n, "-" + st.last + " days"));
-    run("INSERT INTO buddies VALUES (?,?)", sid, st.streak);
-  });
-  D.baseMissions.forEach(m => run("INSERT INTO missions(class_id,name,goal,unit,created_by) VALUES (?,?,?,?,?)", cls, m.name, m.goal, m.unit, teacher));
-
-  // batches
-  D.batches.forEach(b => {
-    run("INSERT INTO batches VALUES (?,?,?,?,?,?)", b.id, school[b.school], cohort[b.cohort], b.outlet, b.kg, b.events.some(e => e[2] === "wait") ? 0 : 1);
-    b.events.forEach(e => run("INSERT INTO batch_events(batch_id,happened,text,done) VALUES (?,?,?,?)", b.id, e[0] === "pending" ? null : e[0], e[1], e[2] === "ok" ? 1 : 0));
-  });
-  db.exec("COMMIT");
-} catch (e) { db.exec("ROLLBACK"); throw e; }
-
-const n = t => db.prepare("SELECT COUNT(*) c FROM " + t).get().c;
-console.log("Created " + FILE);
-["cohorts","schools","users","classes","students","projects","project_steps","weeks","accessories","quiz_questions","missions","batches","batch_events"]
-  .forEach(t => console.log("  " + t.padEnd(16) + n(t)));
+if (require.main === module) {
+  const file = DEFAULT_FILE, demo = process.argv.includes("--demo");
+  if (fs.existsSync(file)) {
+    if (!process.argv.includes("--force")) { console.error(file + " already exists. Run with --force to wipe and recreate it."); process.exit(1); }
+    for (const f of [file, file + "-wal", file + "-shm"]) fs.rmSync(f, { force: true });
+  }
+  const db = createDb(file, { demo });
+  console.log("Created " + file + (demo ? " with demo data (every login uses the password \"demo\")" : " (content only: add accounts with db/admin.js)"));
+  ["schools", "users", "classes", "students", "projects", "accessories", "quiz_questions"].forEach(t => console.log("  " + t.padEnd(16) + db.prepare("SELECT COUNT(*) c FROM " + t).get().c));
+}

@@ -77,39 +77,24 @@ var DATA = {
     {id:"medal",name:"Mission medal",slot:"neck", how:"mission", need:1, hint:"Help your class finish a mission"}
   ],
 
-  classCode:"BEAN-4F2K",
-  className:"Sec 1A",
-  schoolName:"Maple Secondary",
-  students:[
-    {n:"Aiko",steps:12,streak:9,last:0},{n:"Ben",steps:8,streak:3,last:0},{n:"Chloe",steps:15,streak:14,last:0},
-    {n:"Dev",steps:4,streak:0,last:3},{n:"Elif",steps:10,streak:5,last:1},{n:"Farid",steps:6,streak:2,last:0},
-    {n:"Grace",steps:13,streak:7,last:0},{n:"Hugo",steps:2,streak:0,last:5},{n:"Ines",steps:9,streak:4,last:0},
-    {n:"Jonas",steps:7,streak:1,last:2}
-  ],
-  // students and baseMissions are only used by db/init.js to seed the database; the app uses the roster in js/dashboard-data.js
-  baseMissions:[
-    {id:"m1",name:"Reuse 40 scoops of grounds together",goal:40,base:31,unit:"steps"},
-    {id:"m2",name:"Every student finishes one project",goal:11,base:6,unit:"projects"}
-  ],
-
   schools:[
-    {id:"s1",name:"Maple Secondary",cohort:"2026 A",classes:3,students:68,kg:212,active:91,flagged:2,last:"today"},
-    {id:"s2",name:"Riverside Secondary",cohort:"2026 A",classes:2,students:49,kg:158,active:84,flagged:0,last:"today"},
-    {id:"s3",name:"St Anne's Secondary",cohort:"2026 B",classes:4,students:97,kg:276,active:72,flagged:5,last:"2 days ago"},
-    {id:"s4",name:"Hillcrest Secondary",cohort:"2026 B",classes:2,students:51,kg:94,active:58,flagged:1,last:"4 days ago"}
+    {id:"s1",name:"Sungei Rimba Secondary School",cohort:"2026 A",classes:3,students:68,kg:212,active:91,flagged:2,last:"today"},
+    {id:"s2",name:"Pelita Hills Secondary School",cohort:"2026 A",classes:2,students:49,kg:158,active:84,flagged:0,last:"today"},
+    {id:"s3",name:"Bukit Teratai Secondary School",cohort:"2026 B",classes:4,students:97,kg:276,active:72,flagged:5,last:"2 days ago"},
+    {id:"s4",name:"Tanjong Merlin Secondary School",cohort:"2026 B",classes:2,students:51,kg:94,active:58,flagged:1,last:"4 days ago"}
   ],
   batches:[
     {id:"B-1042",school:"s1",kg:96,cohort:"2026 A",outlet:"DBS Asia Hub",events:[
       ["2026-09-02","Collected from the CoffeeBot machine at DBS Asia Hub","ok"],["2026-09-03","Dried, then sealed in kit containers","ok"],
-      ["2026-09-08","Delivered to Maple Secondary","ok"],["2026-09-20","Kit opened by Maple Secondary, Sec 1A","ok"],
+      ["2026-09-08","Delivered to Sungei Rimba Secondary School","ok"],["2026-09-20","Kit opened by Sungei Rimba Secondary School, Sec 1A","ok"],
       ["2026-10-12","Used in seedling projects, 96 kg verified","ok"]]},
     {id:"B-1043",school:"s2",kg:158,cohort:"2026 A",outlet:"SMU School of Law",events:[
       ["2026-09-05","Collected from the CoffeeBot machine at SMU School of Law","ok"],["2026-09-06","Dried, then sealed in kit containers","ok"],
-      ["2026-09-12","Delivered to Riverside Secondary","ok"],["2026-10-20","Used in garden beds, 158 kg verified","ok"]]},
+      ["2026-09-12","Delivered to Pelita Hills Secondary School","ok"],["2026-10-20","Used in garden beds, 158 kg verified","ok"]]},
     {id:"B-1051",school:"s3",kg:276,cohort:"2026 B",outlet:"DBS Asia Central",events:[
       ["2026-10-01","Collected from the CoffeeBot machine at DBS Asia Central","ok"],["2026-10-02","Dried, then sealed in kit containers","ok"],
-      ["2026-10-09","Delivered to St Anne's Secondary","ok"],["pending","Awaiting verification of 40 kg","wait"]]},
+      ["2026-10-09","Delivered to Bukit Teratai Secondary School","ok"],["pending","Awaiting verification of 40 kg","wait"]]},
     {id:"B-1052",school:"s4",kg:94,cohort:"2026 B",outlet:"DBS Asia Hub",events:[
-      ["2026-10-01","Collected from the CoffeeBot machine at DBS Asia Hub","ok"],["2026-10-10","Delivered to Hillcrest Secondary","ok"],["pending","Kits with students","wait"]]}
+      ["2026-10-01","Collected from the CoffeeBot machine at DBS Asia Hub","ok"],["2026-10-10","Delivered to Tanjong Merlin Secondary School","ok"],["pending","Kits with students","wait"]]}
   ]
 };

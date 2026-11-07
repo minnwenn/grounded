@@ -1,5 +1,5 @@
 {
-  "name": "bean-again",
+  "name": "grounded",
   "private": true,
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
@@ -9,7 +9,10 @@
     "demo:morning": "node demo.js morning",
     "demo:reset": "node demo.js reset",
     "db:init": "node --no-warnings db/init.js",
-    "db:reset": "node --no-warnings db/init.js --force"
+    "db:reset": "node --no-warnings db/init.js --force",
+    "db:demo": "node --no-warnings db/init.js --demo",
+    "db:reset:demo": "node --no-warnings db/init.js --demo --force",
+    "admin": "node --no-warnings db/admin.js"
   },
   "engines": {
     "node": ">=22"

@@ -1,27 +1,60 @@
-# Bean Again
+# Grounded
 
-A lightweight web app for CoffeeBot, schools and students: a 4-week journey of coffee ground projects, a Bean Buddy, class gardens, teacher review and a CoffeeBot dashboard. This is a prototype with demo data. Accounts, payments and the live data pipeline are simulated.
+A lightweight web app for CoffeeBot, schools and students: a 4-week journey of coffee ground projects, a Bean Buddy, class gardens, teacher review and a CoffeeBot dashboard. Student and teacher data is stored on the server. The CoffeeBot dashboards (batches, carbon, sponsor report) still show sample data.
 
-## Run
+## Run locally
 
 Requires Node 22 or newer.
 
-- **Quick look**: open `index.html` in a browser (the demo clock stays at day 0).
-- **Full app:**
-  1. `npm install` (installs the Anthropic SDK and zod, used by the AI photo check)
-  2. Optional, for the AI photo check: `cp .env.example .env` and put your key after `ANTHROPIC_API_KEY=`. `.env` is git-ignored, so the key never goes to GitHub.
-  3. `npm start`
-  4. Open http://localhost:3000
+1. `npm install`
+2. `cp .env.example .env`, then edit it:
+   - set `SEED_DEMO=1` so the first start fills the database with a demo school (see Sample data below)
+   - optional: put your key after `ANTHROPIC_API_KEY=` for the AI photo check. `.env` is git-ignored, so the key never goes to GitHub.
+3. `npm start`
+4. Open http://localhost:3000
+
+The server creates the database (`db/grounded.db`) the first time it starts. Open the page through the server: opening `index.html` directly no longer works, because progress and logins live on the server.
+
+## Accounts
+
+| Who | How they get in |
+|---|---|
+| **Student** | Enter the **class code** from the teacher, a name and a password. "New here? create my account" makes the account; after that the same three fields log them in. Names are unique within a class. |
+| **Teacher** | Email and password, created by CoffeeBot (see below). Each teacher sees the class linked to their account. |
+| **CoffeeBot** | Email and password, created from the command line. |
+
+A teacher can reset a student's password from the Students table on the dashboard (the student is logged out everywhere). There is no email reset, so students and teachers sort it out in person.
+
+Set up a real school (no demo data) with `db/admin.js`, run from the project root:
+
+```
+npm run db:init                                   # only if the database does not exist yet
+node db/admin.js coffeebot team@coffeebot.sg "CoffeeBot team" 'a-long-password'
+node db/admin.js school "2026 A" "Maple Secondary"                # prints the school id
+node db/admin.js teacher ms.tan@maple.edu.sg "Ms Tan" 'a-long-password' 1
+node db/admin.js class 1 ms.tan@maple.edu.sg "Sec 1A"            # prints the class code to give students
+node db/admin.js list
+```
+
+Passwords for staff need 8 or more characters; students need 6 or more. A teacher currently sees one class (the first one linked to them).
+
+## Sample data (Singapore secondary schools)
+
+`npm run db:demo` (or `SEED_DEMO=1` on first start) fills the database with four invented secondary schools (Sungei Rimba, Pelita Hills, Bukit Teratai, Tanjong Merlin: not real schools), 11 classes with a teacher each, about 265 students with local names, and seven weeks of progress, photos, quiz answers and purchases. Class sizes and progress match the CoffeeBot dashboards. Never use it on a live school database. Every password is `demo`.
+
+- **Teacher:** `lim_hui_ling@sungeirimba.example` (Sec 1A, Sungei Rimba, 2 photos waiting for review). Other teachers: `node db/admin.js list`.
+- **Student:** class code `RIMB-1A7K` with a name from that class, e.g. `Tan Hui Ling` or `Ng Jing Yi`.
+- **CoffeeBot:** `team@coffeebot.example`
 
 ## Photo check
 
 Each final photo goes through three steps:
 
 1. **Quick check on the device** (MobileCLIP-S0, `js/clip-check.js`). A clear mismatch stops here and counts as a failed try. Nothing is sent anywhere.
-2. **AI check** (Claude, `/api/check` in `server.js`, needs `ANTHROPIC_API_KEY` in `.env`). Pass counts immediately. Unsure goes to the teacher. Fail counts as a failed try.
+2. **AI check** (Claude, run by the server from `/api/check`, needs `ANTHROPIC_API_KEY`). Pass counts when the student presses Submit. Unsure goes to the teacher. Fail counts as a failed try.
 3. **Teacher review**, only for photos the AI is unsure about, or that are still failing after 3 retakes (4 tries in all, set by `aiRetakeLimit` in `js/dashboard-data.js`). Approve counts as verified. Redo sends the student back to the photo step.
 
-Without an API key, the AI step is skipped. A quick-check pass then counts on its own, and the screen says "quick check only (AI unavailable)".
+Without an API key (demo mode), the AI step is skipped and a quick-check pass counts on its own; the screen says "quick check only (AI unavailable)". If the AI is down or errors, the photo goes to the teacher instead.
 
 Quick check details: the image model (~23 MB) downloads once when a student opens a photo step. A photo passes if its project is the best match at 60% or more, and fails below 10%. Prompts are precomputed in `js/clip-labels.js` (edit `tools/make-clip-labels.mjs` to change them). On 44 sample photos it passed 22/26 correct photos and 0/72 wrong-photo checks. The prompts were tuned on those same photos, so expect lower accuracy on real ones. The 8-bit 12 MB model version is broken: use fp16. Photos are compressed to under 400 kB before checking and are never stored.
 
@@ -36,40 +69,55 @@ There are no demo buttons in the app. The demo clock is driven from a second ter
 | `node demo.js set-day 7` | Sets the demo to a specific day number. |
 | `npm run demo:evening` | Sets the time of day to evening, so the Buddy gets sleepy if the quiz isn't done. |
 | `npm run demo:morning` | Sets it back to morning. |
-| `npm run demo:reset` | Resets the demo to day 0 and clears all student progress, points, beans and flagged photos. Logins are kept. |
+| `npm run demo:reset` | Puts the demo clock back to day 0 and morning. It does **not** delete student data: use `npm run db:reset:demo` (stop the server first) to start the demo data over. |
 | `node demo.js status` | Shows the current demo day and time of day. |
 
 Notes:
 - Commands only work from the machine running the server (localhost). Requests from other machines are refused.
 - The demo day is saved in `.demo-state.json` (git-ignored), so restarting the server keeps it. Use `npm run demo:reset` to start clean.
 - If you started the server on another port, run commands with `PORT=4000 node demo.js status`.
-- When opened straight from `index.html` (no server), the demo day stays fixed at day 0.
+- On a deployed server the clock stays at the real date: the commands are refused from anywhere but the server itself.
 
 ## Database
 
-A SQLite database holds everything the app needs: schools, classes, students, projects, progress, photo results, points and beans, quiz answers, missions and batches. It uses Node's built-in `node:sqlite`, so there is nothing to install. It is **not connected to the app yet**: the app still keeps its state in the browser and reads demo content from `js/data.js`.
+SQLite, through Node's built-in `node:sqlite` (nothing to install). The server owns it: the browser never touches it, and every rule (points, steps, quiz, shop, photo review) is enforced in `db/store.js`.
 
-- `npm run db:init` creates `db/bean.db` from `db/schema.sql` and fills it with the demo content.
-- `npm run db:reset` wipes it and recreates it.
-- Inspect it with `sqlite3 db/bean.db` or any SQLite viewer.
+What is stored: accounts, classes, students, project progress, photo results, points and beans, quiz answers, class missions and login sessions. Sample data for the CoffeeBot dashboards (batches, carbon, sponsor report) is **not** in the database yet: it still comes from `js/dashboard-data.js`.
+
+- `npm run db:init` creates an empty database (content only, no accounts). The server also does this by itself on first start.
+- `npm run db:demo` creates it with the demo school. `npm run db:reset` / `db:reset:demo` wipe and recreate it. **These delete all data**, so never run them against a live database.
+- Learning content (levels, projects, weeks, accessories, quiz) is re-synced from `js/data.js` on every start, so editing that file and redeploying updates it without touching student data.
+- Inspect it with `sqlite3 db/grounded.db` or any SQLite viewer.
 
 Design notes:
 - **Points and beans are a ledger** (`ledger` table) and balances are sums, so every change can be traced. The `student_levels` view gives each student's points, beans and level.
-- **Photos are never stored.** `photo_submissions` keeps only the AI verdict, confidence, feedback and the teacher's review (`pending`, `approved`, `redo`).
-- **Quiz questions** carry `reviewed_by` and `reviewed_at`, so only human-reviewed questions are served.
-- **Passwords** for teachers and CoffeeBot staff are hashed with scrypt (`db/auth.js`). Students join with a class code and have no password.
-- Mood and streaks are worked out from the dates in `quiz_answers`, not stored.
-- `school_kg` view totals kg per school. Add real batch data to `batches` and `batch_events`.
+- **Photos are never stored.** `photo_submissions` keeps the AI verdict, confidence, feedback, why it went to a teacher, and the teacher's decision.
+- **Passwords** (students, teachers, CoffeeBot) are hashed with scrypt (`db/auth.js`). Login sessions are a random cookie token; only its hash is in the database.
+- **Photo check:** the browser's on-device check runs first, then the server asks Claude. If the AI is unavailable the photo goes to the teacher instead of passing. With no `ANTHROPIC_API_KEY` (demo mode) the on-device verdict stands, which a student could fake: always set the key in production.
+- Mood and streaks are worked out from the dates in `quiz_answers`.
 
-## Demo logins
+## Deploy (Railway, about $5 a month)
 
-- **Student:** class code `BEAN-4F2K` and any name.
-- **Teacher and CoffeeBot:** any email and password.
+SQLite is a file, so the host needs a **persistent volume**. Without one, the database is wiped on every deploy.
+
+1. Push the repo to GitHub.
+2. On railway.com: New Project, Deploy from GitHub repo. It detects Node and runs `npm start` (Node 22 comes from `engines` in `package.json`; if it picks an older one, set the variable `NIXPACKS_NODE_VERSION=22`).
+3. Add a **Volume** to the service, mounted at `/data`.
+4. Variables: `DB_FILE=/data/grounded.db`, `ANTHROPIC_API_KEY=...`, `NODE_ENV=production`, and `APP_TZ` if you are not in Singapore. Do **not** set `SEED_DEMO`.
+5. Settings: Networking, Generate Domain. Health check path: `/healthz`.
+6. Open the service shell and create the accounts (see Accounts): `node db/admin.js coffeebot ...`, then school, teacher and class.
+
+Notes:
+- Run **one instance** only (SQLite is single-writer, and the photo-check state is in memory).
+- **Back up** the volume: Railway can snapshot it, or copy `/data/grounded.db` (plus the `-wal` file) with `sqlite3 /data/grounded.db ".backup backup.db"`.
+- Updating: push to GitHub and Railway redeploys. Student data lives on the volume and is kept.
+- Any host with a persistent disk works the same way (Fly.io volume, a VPS with Caddy for HTTPS). Render's free tier has no disk, so it would lose the data.
 
 ## Files
 
 - `index.html`, `css/`, `js/` - the app (plain HTML, CSS and JavaScript)
-- `js/data.js` - projects, weeks, levels, quiz questions and demo data
-- `db/` - database schema (`schema.sql`), seed script (`init.js`) and password hashing (`auth.js`)
-- `server.js` - serves the app, runs the AI photo check, and holds the demo clock
+- `js/data.js` - projects, weeks, levels, quiz questions and demo seed data
+- `server.js` - web server, the AI photo check, and the demo clock
+- `api.js` - the JSON API: logins, sessions, one route per action
+- `db/store.js` - the game rules and queries; `db/schema.sql` - the tables; `db/init.js` - create and seed; `db/admin.js` - create accounts; `db/auth.js` - password hashing; `db/clock.js` - the school-day clock
 - `demo.js` - the terminal control for the demo clock

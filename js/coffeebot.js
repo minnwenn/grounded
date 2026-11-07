@@ -47,7 +47,7 @@ var CB = (function () {
       return { label: label, kg: m.kg, share: A.totalGroundsPerMonth > 0 ? m.kg / A.totalGroundsPerMonth * 100 : 0 };
     });
     var reuse = '<section class="card"><div class="row between"><h2>Reuse rate by month</h2></div>' +
-      '<p class="muted">Bean Again\'s share = verified kg ÷ total grounds that month, stacked on top of what CoffeeBot already reuses.</p>' +
+      '<p class="muted">Grounded\'s share = verified kg ÷ total grounds that month, stacked on top of what CoffeeBot already reuses.</p>' +
       '<div class="assumes">' + input("totalGroundsPerMonth", "Total grounds per month (kg wet)", { step: 50, note: "placeholder, confirm with CoffeeBot" }) + "</div>" +
       CH.reuse({ width: W, months: months, low: A.existingReuseLow, high: A.existingReuseHigh }) + "</section>";
 
@@ -271,14 +271,14 @@ var CB = (function () {
       "<tr><td>Products replaced by student-made ones</td><td>not claimed</td></tr>" +
       '<tr class="tot"><td>Net CO₂e avoided</td><td>' + signed(c.net, 1) + " kg</td></tr></tbody></table>" +
       '<h4>Assumptions</h4><ul class="rep-list">' +
-      "<li>Baseline: without Bean Again these grounds would go to " + A.baseline + " (" + c.factor + " kg CO₂e per kg wet grounds).</li>" +
+      "<li>Baseline: without Grounded these grounds would go to " + A.baseline + " (" + c.factor + " kg CO₂e per kg wet grounds).</li>" +
       "<li>Drying: " + dryName + ".</li>" +
       "<li>Only <b>verified</b> grounds count as avoided disposal. Drying counts all " + kg(iss) + " issued, used or not.</li>" +
       "<li>Delivery: one car trip per school batch, about " + A.deliveryTripKm + " km there and back, at " + A.deliveryKgPerKm + " kg CO₂e per km. No credit is taken for products the students' items replace.</li>" +
       "<li>All kg are wet-equivalent (dried kg × 2.5). Each student's kit holds " + DASH.CONFIG.projectOrder.map(function (p) { return DASH.CONFIG.gramsDried[p]; }).reduce(function (a, b) { return a + b; }, 0) + " g of dried grounds across four projects.</li>" +
       "<li>A project is verified when its final photo passes the AI check, or a teacher approves it.</li></ul></section>";
 
-    app.innerHTML = '<div class="report-page">' + controls + head("Bean Again impact report: " + reportClient,
+    app.innerHTML = '<div class="report-page">' + controls + head("Grounded impact report: " + reportClient,
         "Grounds from " + outlets.map(function (o) { return o.name; }).join(" and ") + " · cohort " + cohorts.join(", ") + " · generated " + longDate(new Date().toISOString().slice(0, 10))) +
       '<section class="card report">' + stats + flowSec + adoptSec + quizSec + co2Sec + "</section></div>";
   }

@@ -37,7 +37,7 @@ var DASH = (function () {
     deliveryKgPerKm: 0.17,          // kg CO2e per km, average car (UK government conversion factors, rounded)
     displacedCredit: 0              // kg CO2e: not claimed until sourced
   };
-  var AKEY = "beanagain.dash.v1";
+  var AKEY = "grounded.dash.v1";
   var A = (function () {
     var a = JSON.parse(JSON.stringify(DEFAULTS));
     try { var s = JSON.parse(localStorage.getItem(AKEY)); if (s) Object.keys(s).forEach(function (k) { if (k in a && k !== "dryingKwh") a[k] = s[k]; }); } catch (e) {}
@@ -65,16 +65,16 @@ var DASH = (function () {
   // Per-school share of students who STARTED / VERIFIED each project (p4, p5, p2, p6).
   // dates.verified = when the batch's last project was verified; null = cohort still running.
   var SCHOOLS = [
-    { id: "s1", name: "Maple Secondary", cohort: "2026 A", batch: "B-1042", outlet: "o1", students: 68, classSizes: [23, 23, 22], active: 91,
+    { id: "s1", name: "Sungei Rimba Secondary School", cohort: "2026 A", batch: "B-1042", outlet: "o1", students: 68, classSizes: [23, 23, 22], active: 91,
       started: [.99, .96, .92, .86], verified: [.85, .75, .55, .45], waiting: [1], aiPass: 94, streak: 6.2, lastDays: 0,
       dates: { collected: "2026-09-02", dried: "2026-09-04", delivered: "2026-09-14", issued: "2026-09-21", verified: "2026-10-23" } },
-    { id: "s2", name: "Riverside Secondary", cohort: "2026 A", batch: "B-1043", outlet: "o3", students: 49, classSizes: [25, 24], active: 84,
+    { id: "s2", name: "Pelita Hills Secondary School", cohort: "2026 A", batch: "B-1043", outlet: "o3", students: 49, classSizes: [25, 24], active: 84,
       started: [.97, .93, .86, .78], verified: [.80, .70, .45, .30], waiting: [], aiPass: 93, streak: 4.8, lastDays: 0,
       dates: { collected: "2026-09-05", dried: "2026-09-07", delivered: "2026-09-15", issued: "2026-09-21", verified: "2026-10-23" } },
-    { id: "s3", name: "St Anne's Secondary", cohort: "2026 B", batch: "B-1051", outlet: "o2", students: 97, classSizes: [25, 24, 24, 24], active: 72,
+    { id: "s3", name: "Bukit Teratai Secondary School", cohort: "2026 B", batch: "B-1051", outlet: "o2", students: 97, classSizes: [25, 24, 24, 24], active: 72,
       started: [.95, .88, .80, .70], verified: [.72, .62, .54, .44], waiting: [1], aiPass: 91, streak: 3.1, lastDays: 2,
       dates: { collected: "2026-09-28", dried: "2026-09-30", delivered: "2026-10-07", issued: "2026-10-12", verified: null } },
-    { id: "s4", name: "Hillcrest Secondary", cohort: "2026 B", batch: "B-1052", outlet: "o1", students: 51, classSizes: [26, 25], active: 58,
+    { id: "s4", name: "Tanjong Merlin Secondary School", cohort: "2026 B", batch: "B-1052", outlet: "o1", students: 51, classSizes: [26, 25], active: 58,
       started: [.90, .82, .72, .60], verified: [.64, .54, .46, .36], waiting: [], aiPass: 90, streak: 1.9, lastDays: 4,
       dates: { collected: "2026-09-29", dried: "2026-10-01", delivered: "2026-10-08", issued: "2026-10-12", verified: null } }
   ];
@@ -275,7 +275,7 @@ var DASH = (function () {
     };
   }
 
-  /* ---------- teacher dashboard: one class (Maple Secondary, Sec 1A) ---------- */
+  /* ---------- teacher dashboard: one class (Sungei Rimba Secondary School, Sec 1A) ---------- */
   var TEACHER_CLASS = "s1c1";
   // Roster in engagement order (most engaged first). The last slot is the live demo student, filled in by the app.
   var ROSTER = ["Chloe", "Aiko", "Grace", "Li Wei", "Elif", "Priya", "Ines", "Ben", "Mei", "Farid", "Nur", "Jonas", "Omar",
