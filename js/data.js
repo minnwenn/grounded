@@ -54,16 +54,18 @@ var DATA = {
       ["Photo","Take a photo of your labelled jar and upload it."]]}
   ],
 
+  // Daily quiz: one question per local calendar day, cycling through these 10. Later this can be swapped for AI-generated questions.
   quiz: [
     {q:"Why does CoffeeBot dry the grounds before sending them to your school?", o:["To make them smell nicer","Wet grounds can grow mould","To change their colour"], a:1, why:"Damp grounds trap moisture, and mould loves that. Drying keeps them fresh and safe to use."},
-    {q:"What is a good sign your kit grounds are still fine to use?", o:["They clump in your fist","They feel crumbly and smell normal","They look fuzzy"], a:1, why:"Crumbly means no water has got in. Fuzzy or damp grounds mean mould, so tell your teacher."},
+    {q:"What is a good sign your kit grounds are still fine to use?", o:["They clump together when squeezed","They feel crumbly and smell normal","They look fuzzy"], a:1, why:"Crumbly means no water has got in. Fuzzy or damp grounds mean mould, so tell your teacher."},
     {q:"Where should you keep your kit container?", o:["Somewhere damp","A dry spot with the lid closed","In the sun with the lid off"], a:1, why:"Keeping the lid on and the spot dry stops moisture getting back in."},
     {q:"Used coffee grounds added to soil mostly give plants…", o:["Nitrogen","Sunlight","Salt"], a:0, why:"Grounds are a source of nitrogen, a nutrient plants use to grow leaves."},
-    {q:"Why is it good to reuse grounds instead of binning them?", o:["It looks tidy","It keeps food waste out of landfill","So bins weigh less"], a:1, why:"Waste in landfill makes methane. Reusing it keeps that out of the air."},
-    {q:"What happens to coffee grounds sent to landfill?", o:["Nothing at all","They can release methane","They turn into soil"], a:1, why:"Food waste in landfill breaks down without air and releases methane, a strong greenhouse gas."},
-    {q:"A reflection: what step of your project was hardest?", o:["Waiting for paint to dry","Remembering to stir","Getting started"], a:-1, why:"There is no wrong answer. Noticing what is hard helps you plan next time."},
-    {q:"How much grounds should you mix into soil?", o:["All grounds, no soil","About one part in four","None, never mix"], a:1, why:"Too much can pack down and hold water. A small share works best."},
-    {q:"A reflection: what would you tell a friend about reusing grounds?", o:["It is easy to start","It takes patience","It helps the planet"], a:-1, why:"All three can be true. Thanks for thinking about it."}
+    {q:"How much grounds should you mix into soil for a seedling?", o:["All grounds, no soil","About one part grounds to four parts soil","None, never mix them"], a:1, why:"Too much can pack down and hold water. A small share works best."},
+    {q:"Why do coffee-ground sachets help a smelly shoe?", o:["Dried grounds soak up smells","They make the shoe warmer","They add a strong perfume"], a:0, why:"Dried grounds are full of tiny pores that trap smelly molecules, so they absorb odours instead of covering them up."},
+    {q:"What happens to food waste like coffee grounds buried in a landfill?", o:["Nothing at all","It rots without air and releases methane","It turns straight into clean soil"], a:1, why:"Without air, food waste breaks down slowly and gives off methane, a strong greenhouse gas."},
+    {q:"Singapore's only landfill, on Pulau Semakau, is expected to be full by about…", o:["2035","2100","It will never fill up"], a:0, why:"At today's rate Semakau Landfill is expected to fill up around 2035. Reusing things helps it last longer."},
+    {q:"In \"reduce, reuse, recycle\", which comes first because it stops waste before it starts?", o:["Recycle","Reuse","Reduce"], a:2, why:"Reducing means the waste is never made. Reusing comes next, and recycling is the last of the three."},
+    {q:"Your coffee paint looks too pale. What should you do?", o:["Add more water","Steep more grounds in it","Put it in the fridge"], a:1, why:"More grounds in the same water makes a stronger, darker brown."}
   ],
 
   accessories: [
@@ -76,41 +78,38 @@ var DATA = {
   ],
 
   classCode:"BEAN-4F2K",
-  className:"Year 5 Maple",
+  className:"Sec 1A",
+  schoolName:"Maple Secondary",
   students:[
     {n:"Aiko",steps:12,streak:9,last:0},{n:"Ben",steps:8,streak:3,last:0},{n:"Chloe",steps:15,streak:14,last:0},
     {n:"Dev",steps:4,streak:0,last:3},{n:"Elif",steps:10,streak:5,last:1},{n:"Farid",steps:6,streak:2,last:0},
     {n:"Grace",steps:13,streak:7,last:0},{n:"Hugo",steps:2,streak:0,last:5},{n:"Ines",steps:9,streak:4,last:0},
     {n:"Jonas",steps:7,streak:1,last:2}
   ],
-  quizTrend:[62,70,66,74,78,75,82],
+  // students and baseMissions are only used by db/init.js to seed the database; the app uses the roster in js/dashboard-data.js
   baseMissions:[
     {id:"m1",name:"Reuse 40 scoops of grounds together",goal:40,base:31,unit:"steps"},
     {id:"m2",name:"Every student finishes one project",goal:11,base:6,unit:"projects"}
   ],
-  baseFlagged:[
-    {id:"f1",student:"Hugo",project:"Deodoriser sachets",note:"Looks blurry. Low confidence (0.42)"},
-    {id:"f2",student:"Dev",project:"Grow a seedling",note:"No pot visible. Low confidence (0.38)"}
-  ],
 
   schools:[
-    {id:"s1",name:"Maple Primary",cohort:"2026 A",classes:3,students:68,kg:212,active:91,flagged:2,last:"today"},
-    {id:"s2",name:"Riverside Academy",cohort:"2026 A",classes:2,students:49,kg:158,active:84,flagged:0,last:"today"},
-    {id:"s3",name:"St Anne's School",cohort:"2026 B",classes:4,students:97,kg:276,active:72,flagged:5,last:"2 days ago"},
-    {id:"s4",name:"Hillcrest Juniors",cohort:"2026 B",classes:2,students:51,kg:94,active:58,flagged:1,last:"4 days ago"}
+    {id:"s1",name:"Maple Secondary",cohort:"2026 A",classes:3,students:68,kg:212,active:91,flagged:2,last:"today"},
+    {id:"s2",name:"Riverside Secondary",cohort:"2026 A",classes:2,students:49,kg:158,active:84,flagged:0,last:"today"},
+    {id:"s3",name:"St Anne's Secondary",cohort:"2026 B",classes:4,students:97,kg:276,active:72,flagged:5,last:"2 days ago"},
+    {id:"s4",name:"Hillcrest Secondary",cohort:"2026 B",classes:2,students:51,kg:94,active:58,flagged:1,last:"4 days ago"}
   ],
   batches:[
-    {id:"B-1042",school:"s1",kg:96,cohort:"2026 A",cafe:"Corner Roast Café",events:[
-      ["2026-09-02","Collected from Corner Roast Café","ok"],["2026-09-03","Dried, then sealed in kit containers","ok"],
-      ["2026-09-08","Delivered to Maple Primary","ok"],["2026-09-20","Kit opened by Year 5 Maple","ok"],
+    {id:"B-1042",school:"s1",kg:96,cohort:"2026 A",outlet:"DBS Asia Hub",events:[
+      ["2026-09-02","Collected from the CoffeeBot machine at DBS Asia Hub","ok"],["2026-09-03","Dried, then sealed in kit containers","ok"],
+      ["2026-09-08","Delivered to Maple Secondary","ok"],["2026-09-20","Kit opened by Maple Secondary, Sec 1A","ok"],
       ["2026-10-12","Used in seedling projects, 96 kg verified","ok"]]},
-    {id:"B-1043",school:"s2",kg:158,cohort:"2026 A",cafe:"Daily Grind",events:[
-      ["2026-09-05","Collected from Daily Grind","ok"],["2026-09-06","Dried, then sealed in kit containers","ok"],
-      ["2026-09-12","Delivered to Riverside Academy","ok"],["2026-10-20","Used in garden beds, 158 kg verified","ok"]]},
-    {id:"B-1051",school:"s3",kg:276,cohort:"2026 B",cafe:"Bean There",events:[
-      ["2026-10-01","Collected from Bean There","ok"],["2026-10-02","Dried, then sealed in kit containers","ok"],
-      ["2026-10-09","Delivered to St Anne's School","ok"],["pending","Awaiting verification of 40 kg","wait"]]},
-    {id:"B-1052",school:"s4",kg:94,cohort:"2026 B",cafe:"Bean There",events:[
-      ["2026-10-01","Collected from Bean There","ok"],["2026-10-10","Delivered to Hillcrest Juniors","ok"],["pending","Kits with students","wait"]]}
+    {id:"B-1043",school:"s2",kg:158,cohort:"2026 A",outlet:"SMU School of Law",events:[
+      ["2026-09-05","Collected from the CoffeeBot machine at SMU School of Law","ok"],["2026-09-06","Dried, then sealed in kit containers","ok"],
+      ["2026-09-12","Delivered to Riverside Secondary","ok"],["2026-10-20","Used in garden beds, 158 kg verified","ok"]]},
+    {id:"B-1051",school:"s3",kg:276,cohort:"2026 B",outlet:"DBS Asia Central",events:[
+      ["2026-10-01","Collected from the CoffeeBot machine at DBS Asia Central","ok"],["2026-10-02","Dried, then sealed in kit containers","ok"],
+      ["2026-10-09","Delivered to St Anne's Secondary","ok"],["pending","Awaiting verification of 40 kg","wait"]]},
+    {id:"B-1052",school:"s4",kg:94,cohort:"2026 B",outlet:"DBS Asia Hub",events:[
+      ["2026-10-01","Collected from the CoffeeBot machine at DBS Asia Hub","ok"],["2026-10-10","Delivered to Hillcrest Secondary","ok"],["pending","Kits with students","wait"]]}
   ]
 };

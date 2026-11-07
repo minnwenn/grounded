@@ -4,15 +4,26 @@ A lightweight web app for CoffeeBot, schools and students: a 4-week journey of c
 
 ## Run
 
-Requires Node 22 or newer. No packages to install.
+Requires Node 22 or newer.
 
-- **Quick look** (demo photo check only): open `index.html` in a browser.
-- **Full app with the AI photo check and demo controls:**
-  1. `cp .env.example .env` and add your `ANTHROPIC_API_KEY` (it stays on the server and is never sent to the browser).
-  2. `npm start`
-  3. Open http://localhost:3000
+- **Quick look**: open `index.html` in a browser (the demo clock stays at day 0).
+- **Full app:**
+  1. `npm install` (installs the Anthropic SDK and zod, used by the AI photo check)
+  2. Optional, for the AI photo check: `cp .env.example .env` and put your key after `ANTHROPIC_API_KEY=`. `.env` is git-ignored, so the key never goes to GitHub.
+  3. `npm start`
+  4. Open http://localhost:3000
 
-Without an API key the photo step uses a rough built-in brightness check instead of the AI, and says so on screen.
+## Photo check
+
+Each final photo goes through three steps:
+
+1. **Quick check on the device** (MobileCLIP-S0, `js/clip-check.js`). A clear mismatch stops here and counts as a failed try. Nothing is sent anywhere.
+2. **AI check** (Claude, `/api/check` in `server.js`, needs `ANTHROPIC_API_KEY` in `.env`). Pass counts immediately. Unsure goes to the teacher. Fail counts as a failed try.
+3. **Teacher review**, only for photos the AI is unsure about, or that are still failing after 3 retakes (4 tries in all, set by `aiRetakeLimit` in `js/dashboard-data.js`). Approve counts as verified. Redo sends the student back to the photo step.
+
+Without an API key, the AI step is skipped. A quick-check pass then counts on its own, and the screen says "quick check only (AI unavailable)".
+
+Quick check details: the image model (~23 MB) downloads once when a student opens a photo step. A photo passes if its project is the best match at 60% or more, and fails below 10%. Prompts are precomputed in `js/clip-labels.js` (edit `tools/make-clip-labels.mjs` to change them). On 44 sample photos it passed 22/26 correct photos and 0/72 wrong-photo checks. The prompts were tuned on those same photos, so expect lower accuracy on real ones. The 8-bit 12 MB model version is broken: use fp16. Photos are compressed to under 400 kB before checking and are never stored.
 
 ## Demo controls (terminal only)
 

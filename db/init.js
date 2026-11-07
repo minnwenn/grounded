@@ -55,7 +55,7 @@ try {
 
   // batches
   D.batches.forEach(b => {
-    run("INSERT INTO batches VALUES (?,?,?,?,?,?)", b.id, school[b.school], cohort[b.cohort], b.cafe, b.kg, b.events.some(e => e[2] === "wait") ? 0 : 1);
+    run("INSERT INTO batches VALUES (?,?,?,?,?,?)", b.id, school[b.school], cohort[b.cohort], b.outlet, b.kg, b.events.some(e => e[2] === "wait") ? 0 : 1);
     b.events.forEach(e => run("INSERT INTO batch_events(batch_id,happened,text,done) VALUES (?,?,?,?)", b.id, e[0] === "pending" ? null : e[0], e[1], e[2] === "ok" ? 1 : 0));
   });
   db.exec("COMMIT");

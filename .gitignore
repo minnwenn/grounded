@@ -4,3 +4,4 @@ node_modules
 .demo-state.json
 db/*.db
 db/*.db-*
+.claude/

@@ -172,7 +172,7 @@ CREATE TABLE batches (
   id         TEXT PRIMARY KEY,                     -- 'B-1042'
   school_id  INTEGER NOT NULL REFERENCES schools(id),
   cohort_id  INTEGER NOT NULL REFERENCES cohorts(id),
-  cafe       TEXT NOT NULL,
+  outlet     TEXT NOT NULL,                     -- CoffeeBot machine location
   kg         REAL NOT NULL,
   verified   INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0,1))
 );

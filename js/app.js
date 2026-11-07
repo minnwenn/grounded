@@ -6,14 +6,19 @@ var $=function(s){return document.querySelector(s);};
 var app=$("#app"), nav=$("#nav");
 
 /* ---------- state ---------- */
-function fresh(){return {role:null,day:0,evening:false,beans:15,streak:2,lastQuizDay:-1,quizPick:null,
-  points:0,user:null,owned:[],equipped:{},progress:{},flagged:[],reviewed:{},extraMissions:[],tab:{}};}
+// Days are counted from the real local calendar date (rolls over at local midnight), plus the demo-clock offset S.day.
+function localDay(){var t=new Date();return Math.floor(Date.UTC(t.getFullYear(),t.getMonth(),t.getDate())/864e5);}
+function fresh(){return {role:null,day:0,evening:false,beans:15,streak:2,lastQuizDay:localDay()-1,quizPick:null,
+  points:0,user:null,owned:[],equipped:{},progress:{},flagged:[],reviewed:{},extraMissions:[],tab:{},fails:{}};}
 var S=load();
-function load(){try{var s=JSON.parse(localStorage.getItem(KEY));if(s)return Object.assign(fresh(),s);}catch(e){}return fresh();}
+function load(){try{var s=JSON.parse(localStorage.getItem(KEY));if(s){s=Object.assign(fresh(),s);
+  if(s.lastQuizDay<10000)s.lastQuizDay+=localDay(); // older saves counted days from 0 on the demo clock only
+  return s;}}catch(e){}return fresh();}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 
 /* ---------- derived ---------- */
-function gap(){return S.day-S.lastQuizDay;}
+function today(){return localDay()+S.day;}
+function gap(){return today()-S.lastQuizDay;}
 function streakNow(){return gap()>=2?0:S.streak;}
 function mood(){
   var g=gap();
@@ -34,10 +39,20 @@ function nextLvl(){var L=DATA.levels,c=lvl();return L[c.n]||null;}
 function projById(id){return DATA.projects.filter(function(x){return x.id===id;})[0];}
 function stepsDone(){return Object.keys(S.progress).reduce(function(a,k){return a+S.progress[k];},0);}
 function projectsDone(){return DATA.projects.filter(function(p){return S.progress[p.id]>=5;}).length;}
+/* Class missions are measured from the class roster (verified projects), so student and teacher views agree */
+function classSummary(){
+  var R=classRoster(),P=DASH.CONFIG.projectOrder,kg=0,verifiedProjects=0;
+  P.forEach(function(p){var n=R.filter(function(r){return r.status[p]==="verified";}).length;verifiedProjects+=n;kg+=n*DASH.wetKgPerProject(p);});
+  return {size:R.length,kg:kg,verifiedProjects:verifiedProjects,studentsVerified:R.filter(function(r){return P.some(function(p){return r.status[p]==="verified";});}).length};
+}
 function allMissions(){
-  var m=DATA.baseMissions.map(function(x){return {id:x.id,name:x.name,goal:x.goal,unit:x.unit,
-    cur:x.base+(x.unit==="steps"?stepsDone():projectsDone())};});
-  S.extraMissions.forEach(function(x){m.push({id:x.id,name:x.name,goal:x.goal,unit:"steps",cur:Math.min(stepsDone(),x.goal)});});
+  var c=classSummary();
+  var m=DASH.classMissions().map(function(x){
+    var goal=x.goal==null?c.size:x.goal;
+    var cur=x.unit==="kg"?Math.round(c.kg*10)/10:c.studentsVerified;
+    return {id:x.id,name:x.name,goal:goal,unit:x.unit,cur:cur};
+  });
+  S.extraMissions.forEach(function(x){m.push({id:x.id,name:x.name,goal:x.goal,unit:"projects verified",cur:Math.min(c.verifiedProjects,x.goal)});});
   return m.map(function(x){x.done=x.cur>=x.goal;return x;});
 }
 function missionsDone(){return allMissions().filter(function(m){return m.done;}).length;}
@@ -48,7 +63,8 @@ function unlocked(a){
   if(a.how==="mission")return missionsDone()>=a.need;
 }
 function stage(pid){var n=S.progress[pid];if(n===undefined)return -1;return n===0?0:n<=2?1:n<5?2:3;}
-function allFlags(){return DATA.baseFlagged.concat(S.flagged);}
+// Teacher queue: classmates' photos the AI couldn't verify (demo data) plus the live demo student's own
+function allFlags(){return DASH.waitingPhotos(DASH.teacherClass().id).map(function(x){return Object.assign({roster:true},x);}).concat(S.flagged);}
 function pending(){return allFlags().filter(function(f){return !S.reviewed[f.id];});}
 function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 
@@ -66,13 +82,14 @@ function eqObj(){return S.equipped;}
 var NAVS={
   student:[["#/student","Path"],["#/student/projects","Projects"],["#/student/buddy","Buddy"],["#/student/garden","Garden"]],
   school:[["#/school","Overview"],["#/school/photos","Photos"],["#/school/missions","Missions"]],
-  coffeebot:[["#/coffeebot","Overview"],["#/coffeebot/schools","Schools"],["#/coffeebot/batches","Batches"],["#/coffeebot/report","Report"]]
+  coffeebot:[["#/coffeebot","Overview"],["#/coffeebot/journey","Grounds journey"],["#/coffeebot/schools","Schools"],["#/coffeebot/batches","Batches"],["#/coffeebot/carbon","Carbon"],["#/coffeebot/report","Sponsor report"]]
 };
 var ROUTES={
   "":landing,"login":loginPage,
   "student":stuPath,"student/project":stuProject,"student/buddy":stuBuddy,"student/projects":stuProjects,"student/garden":stuGarden,
   "school":schOverview,"school/photos":schPhotos,"school/missions":schMissions,
-  "coffeebot":cbOverview,"coffeebot/schools":cbSchools,"coffeebot/batches":cbBatches,"coffeebot/report":cbReport
+  "coffeebot":function(){CB.overview(app);},"coffeebot/journey":function(){CB.journey(app);},"coffeebot/schools":function(){CB.schools(app);},
+  "coffeebot/batches":function(){CB.batches(app);},"coffeebot/carbon":function(){CB.carbon(app);},"coffeebot/report":function(){CB.report(app);}
 };
 function route(){
   var raw=location.hash.replace(/^#\/?/,"").split("?");
@@ -227,7 +244,7 @@ function stuProject(){
 }
 function stuProjects(){
   var nx=nextLvl();
-  var html=stuHeader()+'<h2>Choose a project</h2><p class="muted">Finish a project with a photo the AI approves to earn points. '+(nx?'You need <b>'+(nx.at-S.points)+' more points</b> for level '+nx.n+' ('+nx.name+').':'You are at the top level!')+'</p>'+
+  var html=stuHeader()+'<h2>Choose a project</h2><p class="muted">Finish a project with a photo the checker approves to earn points. '+(nx?'You need <b>'+(nx.at-S.points)+' more points</b> for level '+nx.n+' ('+nx.name+').':'You are at the top level!')+'</p>'+
   (nx?bar((S.points-lvl().at)/(nx.at-lvl().at)*100):'')+'<div class="grid g2" style="margin-top:16px">';
   DATA.projects.slice().sort(function(a,b){return a.level-b.level;}).forEach(function(p){
     var open=lvl().n>=p.level,n=S.progress[p.id];
@@ -250,27 +267,35 @@ function openStep(pid,i){
     modal('<h2>'+esc(s[0])+'</h2><p>'+esc(s[1])+'</p><div class="row"><button class="btn" data-act="finish" data-id="'+pid+'" data-i="'+i+'">I did it</button><button class="btn btn-ghost" data-act="close">Not yet</button></div>');
   }else{
     modal('<h2>'+esc(s[0])+'</h2><p>'+esc(s[1])+'</p>'+
-    '<p class="muted">The AI looks for: <b>'+esc(p.photoPrompt)+'</b></p><label for="photo">Choose or take a photo</label><br><input id="photo" data-pid="'+pid+'" type="file" accept="image/*" capture="environment">'+
+    '<p class="muted">The photo checker looks for: <b>'+esc(p.photoPrompt)+'</b></p><label for="photo">Choose or take a photo</label><br><input id="photo" data-pid="'+pid+'" type="file" accept="image/*" capture="environment">'+
     '<div id="photoOut" class="muted" style="margin:10px 0">Show your finished project. Photos are compressed to under 400 kB and deleted after checking.</div>'+
     '<div class="row"><button id="submitPhoto" class="btn" disabled data-act="finish" data-id="'+pid+'" data-i="'+i+'">Submit</button><button class="btn btn-ghost" data-act="close">Cancel</button></div>');
     $("#photo").addEventListener("change",onPhoto);
+    clipCheck.warm(); // start the one-time model download while the student reads the step
   }
 }
 var lastCheck=null;
-function demoVerdict(c,ctx){
-  // Fallback when the AI server is not running: crude sharpness/brightness score, not a real check.
-  var d=ctx.getImageData(0,0,c.width,c.height).data,sum=0,sq=0,cnt=0;
-  for(var i=0;i<d.length;i+=40){var l=(d[i]+d[i+1]+d[i+2])/3;sum+=l;sq+=l*l;cnt++;}
-  var mean=sum/cnt,sd=Math.sqrt(Math.max(0,sq/cnt-mean*mean));
-  var conf=Math.max(0.05,Math.min(0.99,(sd/60)*(mean>25&&mean<235?1:0.4)));
-  return {verdict:conf>=0.5?"pass":"unsure",confidence:conf,feedback:conf>=0.5?"Demo check only: the AI server is not running.":"Photo looks unclear. Sent to your teacher.",mode:"demo"};
-}
-function aiCheck(pid,b64,fallback){
-  if(typeof fetch!=="function")return Promise.resolve(fallback());
+/* Photo pipeline: local check (MobileCLIP, on the device) -> AI check (Claude, via the server) -> teacher.
+ * - local "fail": not sent on, counts as a failed try
+ * - otherwise the AI decides: pass counts right away, unsure goes to the teacher, fail counts as a failed try
+ * - still failing after RETAKES retakes: goes to the teacher
+ * - no AI available (no API key or offline): the local verdict stands, so a local pass counts */
+var RETAKES=DASH.CONFIG.aiRetakeLimit;
+function aiCheck(pid,b64){
+  if(typeof fetch!=="function")return Promise.resolve(null);
   return fetch("api/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({projectId:pid,image:b64})})
-    .then(function(r){if(!r.ok)throw new Error("bad");return r.json();})
-    .then(function(j){if(j.mode==="demo"||!j.verdict)throw new Error("nokey");return j;})
-    .catch(function(){return fallback();});
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(j){return j&&j.verdict?j:null;})
+    .catch(function(){return null;});
+}
+function photoPipeline(pid,data,onProgress){
+  return clipCheck.check(projById(pid),data,onProgress).then(function(local){
+    if(local.verdict==="fail")return Object.assign(local,{stage:"local"});
+    return aiCheck(pid,data.split(",")[1]).then(function(ai){
+      if(ai)return Object.assign(ai,{stage:"ai"});
+      return Object.assign(local,{stage:"local-only"});
+    });
+  });
 }
 function onPhoto(e){
   var f=e.target.files&&e.target.files[0];if(!f)return;
@@ -284,10 +309,19 @@ function onPhoto(e){
     var q=0.8,data=c.toDataURL("image/jpeg",q);
     while(data.length*0.75>400*1024&&q>0.3){q-=0.1;data=c.toDataURL("image/jpeg",q);}
     var kb=Math.round(data.length*0.75/1024);
-    aiCheck(pid,data.split(",")[1],function(){return demoVerdict(c,ctx);}).then(function(r){
-      r.kb=kb;lastCheck=r;
+    photoPipeline(pid,data,function(pc){out.textContent="Loading the photo checker (first time only)... "+pc+"%";}).then(function(r){
+      r.kb=kb;
+      var extra="";
+      if(r.verdict==="fail"){
+        S.fails[pid]=(S.fails[pid]||0)+1;save();
+        var left=RETAKES+1-S.fails[pid];
+        if(left<=0){r={verdict:"unsure",confidence:r.confidence,stage:r.stage,kb:kb,reason:"retakes",feedback:"Still not a match after "+S.fails[pid]+" tries. Send it and your teacher will check it."};}
+        else extra=' <b>'+left+' '+(left===1?"try":"tries")+' left</b> before your teacher checks it.';
+      }else if(r.verdict==="unsure")r.reason="ai-unsure";
+      lastCheck=r;
+      var by=r.stage==="ai"?"checked by AI":r.stage==="local"?"quick check":"quick check only (AI unavailable)";
       var chip=r.verdict==="pass"?'<span class="chip ok">Looks right!</span>':r.verdict==="unsure"?'<span class="chip">Teacher will check</span>':'<span class="chip bad">Try another photo</span>';
-      out.innerHTML=chip+' <span class="muted">('+r.kb+' kB'+(r.mode==="demo"?", demo check":", AI check")+')</span><p style="margin:8px 0 0">'+esc(r.feedback||"")+'</p><p class="muted">Your photo is not kept after this check.</p>';
+      out.innerHTML=chip+' <span class="muted">('+r.kb+' kB, '+by+')</span><p style="margin:8px 0 0">'+esc(r.feedback||"")+extra+'</p><p class="muted">Your photo is not kept after this check.</p>';
       btn.disabled=r.verdict==="fail";
     });
   };
@@ -302,13 +336,14 @@ function finishStep(pid,i){
     var before=lvl().n;
     S.progress[pid]=5;S.beans+=10;
     if(lastCheck.verdict==="unsure"){
-      S.flagged.push({id:"u"+Date.now(),student:(S.user&&S.user.name||"Sam")+" (you)",project:p.name,pid:pid,pts:p.pts,note:(lastCheck.feedback||"Unsure")+" (confidence "+(+lastCheck.confidence||0).toFixed(2)+")"});
+      var why=lastCheck.reason==="retakes"?"Failed the photo check "+(S.fails[pid]||0)+" times":lastCheck.stage==="ai"?"AI unsure (confidence "+(+lastCheck.confidence||0).toFixed(2)+")":"Quick check unsure, AI unavailable";
+      S.flagged.push({id:"u"+Date.now(),student:(S.user&&S.user.name||"Sam")+" (you)",project:p.name,pid:pid,pts:p.pts,note:why});
       toast("Sent to your teacher. Your "+p.pts+" points arrive once they approve.");
     }else{
       S.points+=p.pts;
       toast(lvl().n>before?"Level up! You are now "+lvl().name+"!":"Verified! +"+p.pts+" points");
     }
-    lastCheck=null;
+    S.fails[pid]=0;lastCheck=null;
   }else{
     S.progress[pid]=n+1;S.beans+=5;toast("Step done! +5 beans");
   }
@@ -316,7 +351,7 @@ function finishStep(pid,i){
 }
 
 /* ---------- student: buddy, quiz, wardrobe ---------- */
-function todaysQ(){var d=Math.floor(Date.now()/864e5)+S.day;return DATA.quiz[d%DATA.quiz.length];}
+function todaysQ(){var n=DATA.quiz.length;return DATA.quiz[((today()%n)+n)%n];} // a new question each local day
 function stuBuddy(){
   var done=gap()===0,q=todaysQ();
   var html=stuHeader()+'<div class="grid g2"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),12)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div>'+
@@ -345,7 +380,7 @@ function answer(i){
   var q=todaysQ();
   if(gap()===0)return;
   S.streak=gap()===1?S.streak+1:1;
-  S.lastQuizDay=S.day;S.quizPick=i;
+  S.lastQuizDay=today();S.quizPick=i;
   var good=q.a<0||i===q.a;
   S.beans+=good?5:1;
   save();route();
@@ -388,8 +423,12 @@ function forest(plants){
   });
   return '<div class="forest"><svg class="px" viewBox="'+(-W/2-6)+' -64 '+(W+12)+' '+(H+64+8)+'" width="100%" role="img" aria-label="Forest island with '+plants.length+' plants" style="display:block;max-width:'+Math.round(W*2.3)+'px">'+g+'</svg></div>';
 }
+/* One plant per classmate who has begun a project; it grows with their progress (started 1, photo sent 2, verified 3 per project) */
 function classPlants(){
-  var list=DATA.students.map(function(st,i){return {name:st.n,stage:Math.min(3,Math.floor(st.steps/4)+1),kind:KINDS[i%3],color:FOREST_COLORS[(st.n.length+i)%FOREST_COLORS.length]};});
+  var rank={none:0,started:1,sent:2,verified:3},P=DASH.CONFIG.projectOrder;
+  var list=classRoster().filter(function(r){return !r.you&&P.some(function(p){return r.status[p]!=="none";});}).map(function(r,i){
+    var score=P.reduce(function(a,p){return a+rank[r.status[p]];},0);
+    return {name:r.name,stage:Math.max(1,Math.min(3,Math.round(score/4))),kind:KINDS[i%3],color:FOREST_COLORS[(r.name.length+i)%FOREST_COLORS.length]};});
   list.push({name:"You",you:true,stage:Math.max(0,Math.min(3,Math.ceil(stepsDone()/4))),kind:"flower",color:"#BB758A"});
   return list;
 }
@@ -400,10 +439,10 @@ function stuGarden(){
     var cp=classPlants();
     html+='<section class="card"><h2>'+DATA.className+' forest</h2><p class="muted">One forest, '+cp.length+' plants. Every student who begins a project adds a plant, so the whole class is rewarded, not just the fastest.</p>'+forest(cp)+'</section>';
   }else{
-    var classes=[["Year 3 Oak",18],["Year 4 Birch",24],[DATA.className,DATA.students.length+1],["Year 6 Cedar",21]];
+    var tc=DASH.teacherClass(),classes=DASH.classes(tc.school).map(function(c){return [c.name,c.started.p4];}); // plants = students who began week 1
     var all=[],mine=classPlants();
     classes.forEach(function(c,ci){
-      if(ci===2){all=all.concat(mine);return;}
+      if(c[0]===DATA.className){all=all.concat(mine);return;}
       for(var k=0;k<c[1];k++)all.push({name:c[0],stage:1+Math.floor(rnd(ci*50+k)*3),kind:KINDS[Math.floor(rnd(ci*90+k+4)*3)],color:FOREST_COLORS[Math.floor(rnd(ci*70+k+9)*4)]});
     });
     // mix the classes together so it reads as one forest
@@ -415,80 +454,91 @@ function stuGarden(){
 }
 
 /* ---------- school ---------- */
+/* Live status of the demo student (the last roster slot) per project */
+function samStatus(pid){
+  var n=S.progress[pid];if(n===undefined)return "none";if(n<5)return "started";
+  var waiting=S.flagged.some(function(f){return f.pid===pid&&!S.reviewed[f.id];});
+  return waiting?"sent":"verified";
+}
+/* Roster with teacher decisions applied, plus the live demo student */
+function classRoster(){
+  var flags=allFlags();
+  var list=DASH.roster(DASH.teacherClass().id).map(function(r){
+    var st=Object.assign({},r.status);
+    flags.forEach(function(f){if(f.roster&&f.student===r.name&&S.reviewed[f.id])st[f.pid]=S.reviewed[f.id]==="ok"?"verified":"started";});
+    return {name:r.name,status:st,streak:r.streak,lastDays:r.lastDays};
+  });
+  var me={name:(S.user&&S.user.role==="student"&&S.user.name||"Sam")+" (demo student)",you:true,status:{},streak:streakNow(),lastDays:Math.max(0,gap())};
+  DASH.CONFIG.projectOrder.forEach(function(p){me.status[p]=samStatus(p);});
+  return list.concat([me]);
+}
+var STAGE_RANK={none:0,started:1,sent:2,verified:3};
+var PIP={none:"not started",started:"started",sent:"photo sent",verified:"verified"};
+function teacherHead(title,sub){
+  return '<div class="dash-head"><div><h1 class="dash-title">'+esc(title)+'</h1>'+(sub?'<p class="muted">'+sub+'</p>':'')+'</div><div class="row"><span class="chip">Class code: <b>'+DATA.classCode+'</b></span><span class="demo-tag">demo data</span></div></div>';
+}
 function schOverview(){
-  var total=DATA.students.length+1;
-  var active=DATA.students.filter(function(s){return s.last<=1;}).length+(gap()<=1?1:0);
-  var steps=DATA.students.reduce(function(a,s){return a+s.steps;},0)+stepsDone();
-  var kg=(steps*0.35).toFixed(1);
-  var trend=DATA.quizTrend;
-  var chart='<svg viewBox="0 0 210 90" width="100%" role="img" aria-label="Average quiz score by day">'+trend.map(function(v,i){
-    var h=v*0.8;return '<rect x="'+(i*30+4)+'" y="'+(85-h)+'" width="22" height="'+h+'" fill="#9A922B" stroke="#721F1F" stroke-width="2"/><text x="'+(i*30+15)+'" y="'+(80-h)+'" font-size="9" text-anchor="middle" fill="#721F1F">'+v+'</text>';}).join("")+'</svg>';
-  var rows=DATA.students.map(function(s){return '<tr><td>'+s.n+'</td><td>'+s.steps+'</td><td>'+s.streak+'</td><td>'+(s.last===0?"today":s.last+" d ago")+'</td></tr>';}).join("")+
-    '<tr><td>Sam (demo student)</td><td>'+stepsDone()+'</td><td>'+streakNow()+'</td><td>'+(gap()===0?"today":gap()+" d ago")+'</td></tr>';
-  app.innerHTML='<div class="row between" style="margin:8px 0 16px"><h1 style="font-size:1.8rem;margin:0">'+DATA.className+'</h1><span class="chip">Class code: <b>'+DATA.classCode+'</b></span></div>'+
-  '<div class="grid g3"><div class="card olive"><div class="stat">'+Math.round(active/total*100)+'%<small>active in last 24 h ('+active+' of '+total+')</small></div></div>'+
-  '<div class="card gold"><div class="stat">'+kg+' kg<small>grounds reused (estimated from steps)</small></div></div>'+
-  '<div class="card rose"><div class="stat">'+pending().length+'<small>photos waiting for review</small></div></div></div>'+
-  '<div class="grid g2" style="margin-top:16px"><section class="card"><h3>Quiz trend (avg % correct, last 7 days)</h3>'+chart+'</section>'+
-  '<section class="card"><h3>Class missions</h3>'+allMissions().map(function(m){return '<p style="margin:8px 0 2px">'+esc(m.name)+'</p>'+bar(m.cur/m.goal*100)+'<span class="muted">'+Math.min(m.cur,m.goal)+' / '+m.goal+' '+m.unit+'</span>';}).join("")+'</section></div>'+
-  '<section class="card scroll" style="margin-top:16px"><h3>Students</h3><table class="tbl"><thead><tr><th>Name</th><th>Steps</th><th>Streak</th><th>Last active</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
+  var R=classRoster(),P=DASH.CONFIG.projectOrder,N=R.length,W=Math.max(280,Math.min(1040,app.clientWidth-72));
+  var count=function(p,min){return R.filter(function(r){return STAGE_RANK[r.status[p]]>=min;}).length;};
+  var proj=P.map(function(p,i){return {p:p,name:DASH.CONFIG.projectNames[p],week:i+1,started:count(p,1),sent:count(p,2),verified:count(p,3)};});
+  var kg=proj.reduce(function(a,x){return a+x.verified*DASH.wetKgPerProject(x.p);},0);
+  var starters=R.filter(function(r){return P.some(function(p){return r.status[p]!=="none";});}).length;
+  var activeToday=R.filter(function(r){return r.lastDays<=1;}).length;
+  var q=DASH.classQuiz(),qAvg=q.reduce(function(a,b){return a+b;},0)/q.length;
+  var waiting=pending().length;
+
+  var kpis='<div class="kpis">'+
+    '<div class="card kpi"><div class="kpi-label">Verified grounds</div><div class="kpi-val">'+kg.toFixed(1)+' kg</div><div class="kpi-sub">verified (AI pass or your approval), wet-equivalent</div></div>'+
+    '<div class="card kpi"><div class="kpi-label">Started a project</div><div class="kpi-val">'+starters+' of '+N+'</div><div class="kpi-sub">'+activeToday+' active in the last day</div></div>'+
+    '<a class="card kpi kpi-link" href="#/school/photos"><div class="kpi-label">Photos to review</div><div class="kpi-val">'+waiting+'</div><div class="kpi-sub">'+(waiting?"the AI couldn't verify these →":"nothing waiting, all clear")+'</div></a>'+
+    '<div class="card kpi"><div class="kpi-label">Quiz accuracy</div><div class="kpi-val">'+Math.round(qAvg)+'%</div>'+CH.spark(q,CH.SERIES[1])+'<div class="kpi-sub">average, last 7 days</div></div></div>';
+
+  // where students stall: biggest gap between stages on any project
+  var stalls=[];
+  proj.forEach(function(x){
+    if(x.started-x.sent>0)stalls.push({n:x.started-x.sent,p:x,what:"started but haven't sent a photo",names:R.filter(function(r){return r.status[x.p]==="started";}).map(function(r){return r.name;})});
+    if(x.sent-x.verified>0)stalls.push({n:x.sent-x.verified,p:x,what:"sent a photo that isn't verified yet",names:R.filter(function(r){return r.status[x.p]==="sent";}).map(function(r){return r.name;})});
+  });
+  stalls.sort(function(a,b){return b.n-a.n;});
+  var top=stalls[0];
+  var stallHtml=top?'<p class="callout stall">⚑ Most students stall at <b>'+esc(top.p.name)+'</b> (week '+top.p.week+'): '+top.n+' '+top.what+'.</p>'+
+    '<details class="tview" open><summary>Who needs a nudge</summary><ul class="nudge">'+stalls.slice(0,4).map(function(st){return '<li><b>'+esc(st.p.name)+'</b>, '+st.what+': <span class="keepcase">'+st.names.map(esc).join(", ")+'</span></li>';}).join("")+'</ul></details>':'<p class="callout">No one is stuck right now.</p>';
+  var projects='<section class="card"><h2>Projects</h2><p class="muted">How many of your '+N+' students started each project, sent their final photo, and had it verified.</p>'+
+    CH.groupedBars({width:W,label:"Project adoption in this class",total:N,series:["Started","Photo sent","Verified"],colors:["#E2B6A6","#C27D72","#8E2B2B"],
+      groups:proj.map(function(x){return {label:x.name,sub:"Week "+x.week,values:[x.started,x.sent,x.verified]};})})+stallHtml+'</section>';
+
+  var labels=q.map(function(_,i){return i===q.length-1?"today":(q.length-1-i)+"d ago";});
+  var quiz='<section class="card"><h2>Daily quiz</h2><p class="muted">Average % correct over the last 7 days.</p>'+
+    CH.lines({width:Math.min(W,520),height:220,label:"Quiz accuracy, last 7 days",labels:labels,xName:"Day",series:[{name:"% correct",values:q,color:CH.SERIES[1]}],fmt:function(v){return Math.round(v)+"%";}})+'</section>';
+  var missions='<section class="card"><h2>Class missions</h2>'+allMissions().map(function(m){return '<p style="margin:10px 0 2px">'+esc(m.name)+' '+(m.done?'<span class="chip ok">done</span>':'')+'</p>'+bar(m.cur/m.goal*100)+'<span class="muted">'+Math.min(m.cur,m.goal)+' / '+m.goal+' '+m.unit+'</span>';}).join("")+'</section>';
+
+  var pips=function(r){return P.map(function(p){var st=r.status[p];return '<span class="pip '+st+'" title="'+esc(DASH.CONFIG.projectNames[p]+": "+PIP[st])+'"></span>';}).join("");};
+  var rows=R.map(function(r){var done=P.filter(function(p){return r.status[p]==="verified";}).length;
+    return '<tr'+(r.you?' class="you"':'')+'><td class="keepcase">'+esc(r.name)+'</td><td><span class="pips">'+pips(r)+'</span> <span class="muted">'+done+'/4</span></td><td>'+r.streak+'</td><td>'+(r.lastDays===0?"today":r.lastDays===1?"yesterday":r.lastDays+" days ago")+'</td></tr>';}).join("");
+  var students='<section class="card"><h2>Students</h2><div class="legend">'+["none","started","sent","verified"].map(function(k){return '<span><i class="pip '+k+'"></i>'+PIP[k]+'</span>';}).join("")+'</div>'+
+    '<div class="scroll"><table class="tbl"><thead><tr><th>Name</th><th>Projects (weeks 1–4)</th><th>Quiz streak</th><th>Last active</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+
+  app.innerHTML=teacherHead(DATA.className+" · "+DATA.schoolName,"How your class is doing with its four coffee-ground projects.")+kpis+
+    '<div class="stack" style="margin-top:16px">'+projects+'<div class="grid g2">'+quiz+missions+'</div>'+students+'</div>';
 }
 function schPhotos(){
-  var f=allFlags();
-  app.innerHTML='<h1 style="font-size:1.8rem">Flagged photos</h1><p class="muted">The classifier flags photos it is unsure about. You make the final call.</p><div class="stack">'+
-  (f.length?f.map(function(x){var r=S.reviewed[x.id];
-    return '<div class="card row between"><div class="row"><div class="thumb" aria-hidden="true"></div><div><b>'+esc(x.student)+'</b> · '+esc(x.project)+'<br><span class="muted">'+esc(x.note)+'</span></div></div>'+
-    (r?'<span class="chip '+(r==="ok"?"ok":"bad")+'">'+(r==="ok"?"approved":"redo requested")+'</span>':
-    '<div class="row"><button class="btn small" data-act="review" data-id="'+x.id+'" data-v="ok">Approve</button><button class="btn small btn-ghost" data-act="review" data-id="'+x.id+'" data-v="redo">Ask to redo</button></div>')+'</div>';}).join(""):'<p>Nothing flagged.</p>')+'</div>';
+  var f=allFlags(),open=f.filter(function(x){return !S.reviewed[x.id];}),done=f.filter(function(x){return S.reviewed[x.id];});
+  var card=function(x){var r=S.reviewed[x.id];
+    return '<div class="card review-card"><div class="row between"><div><b class="keepcase">'+esc(x.student)+'</b> · '+esc(x.project)+'<br><span class="chip reason">'+esc(x.note)+'</span></div>'+
+    (r?'<span class="chip '+(r==="ok"?"ok":"bad")+'">'+(r==="ok"?"✓ approved, counts as verified":"↺ sent back to redo")+'</span>':
+    '<div class="row"><button class="btn small" data-act="review" data-id="'+x.id+'" data-v="ok">Approve</button><button class="btn small btn-ghost" data-act="review" data-id="'+x.id+'" data-v="redo">Ask to redo</button></div>')+'</div></div>';};
+  app.innerHTML=teacherHead("Photos to review","Only photos the AI couldn't verify come here: ones it was unsure about, or that still failed after 3 retakes. Approving counts the project as verified. Redo sends the student back to the photo step.")+
+  '<div class="stack">'+(open.length?open.map(card).join(""):'<section class="card"><p>Nothing waiting. The AI has verified every photo so far.</p></section>')+
+  (done.length?'<h3 style="margin-top:20px">Reviewed</h3>'+done.map(card).join(""):'')+'</div>';
 }
 function schMissions(){
   app.innerHTML='<h1 style="font-size:1.8rem">Class missions</h1><div class="stack">'+allMissions().map(function(m){return '<div class="card"><b>'+esc(m.name)+'</b> '+(m.done?'<span class="chip ok">done</span>':'')+bar(m.cur/m.goal*100)+'<span class="muted">'+Math.min(m.cur,m.goal)+' / '+m.goal+' '+m.unit+'</span></div>';}).join("")+
-  '<form class="card" id="mform"><h3>New mission</h3><div class="row"><div><label for="mn">Name</label><br><input id="mn" required maxlength="60" placeholder="Water every seedling"></div><div><label for="mg">Goal (steps)</label><br><input id="mg" type="number" min="1" max="500" value="20" required></div><button class="btn" style="align-self:flex-end">Add</button></div></form></div>';
+  '<form class="card" id="mform"><h3>New mission</h3><div class="row"><div><label for="mn">Name</label><br><input id="mn" required maxlength="60" placeholder="Water every seedling"></div><div><label for="mg">Goal (projects verified)</label><br><input id="mg" type="number" min="1" max="500" value="80" required></div><button class="btn" style="align-self:flex-end">Add</button></div></form></div>';
   $("#mform").addEventListener("submit",function(e){e.preventDefault();S.extraMissions.push({id:"x"+Date.now(),name:$("#mn").value.trim(),goal:+$("#mg").value});save();toast("Mission added");route();});
 }
 
-/* ---------- CoffeeBot ---------- */
-function totals(coh){
-  var s=DATA.schools.filter(function(x){return !coh||coh==="all"||x.cohort===coh;});
-  var kg=s.reduce(function(a,x){return a+x.kg;},0);
-  return {s:s,kg:kg,stu:s.reduce(function(a,x){return a+x.students;},0),hp:(kg*DATA.handprintFactor)};
-}
-function cbOverview(){
-  var coh=S.tab.coh||"all",t=totals(coh);
-  app.innerHTML='<h1 style="font-size:1.8rem">CoffeeBot overview</h1>'+tabs("coh",[["all","All cohorts"],["2026 A","2026 A"],["2026 B","2026 B"]],coh)+
-  '<div class="grid g3"><div class="card olive"><div class="stat">'+t.kg+' kg<small>verified grounds reused</small></div></div>'+
-  '<div class="card gold"><div class="stat">'+t.hp.toFixed(0)+' kg CO₂e<small>handprint estimate (placeholder factor '+DATA.handprintFactor+')</small></div></div>'+
-  '<div class="card rose"><div class="stat">'+t.stu+'<small>students across '+t.s.length+' schools</small></div></div></div>'+
-  '<section class="card" style="margin-top:16px"><h3>Kg by school</h3>'+t.s.map(function(x){return '<p style="margin:8px 0 2px">'+x.name+' <span class="muted">· '+x.cohort+'</span></p>'+bar(x.kg/300*100)+'<span class="muted">'+x.kg+' kg</span>';}).join("")+'</section>'+
-  '<p class="muted" style="margin-top:12px">CoffeeBot has read-only oversight of every school: activity, flagged photos and verified kg. Schools manage their own classes and review their own photos.</p>';
-}
-function cbSchools(){
-  var rows=DATA.schools.map(function(x){var fl=x.id==="s1"?pending().length:x.flagged;
-    return '<tr><td><b>'+x.name+'</b></td><td>'+x.cohort+'</td><td>'+x.classes+'</td><td>'+x.students+'</td><td>'+x.active+'%</td><td>'+fl+(fl>3?' <span class="chip bad">review lag</span>':'')+'</td><td>'+x.last+'</td></tr>';}).join("");
-  app.innerHTML='<h1 style="font-size:1.8rem">Schools</h1><section class="card scroll"><table class="tbl"><thead><tr><th>School</th><th>Cohort</th><th>Classes</th><th>Students</th><th>Active</th><th>Flagged</th><th>Last activity</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
-}
-function cbBatches(){
-  var rows=DATA.batches.map(function(b){var sc=DATA.schools.filter(function(s){return s.id===b.school;})[0];
-    return '<tr><td><a href="#/batch/'+b.id+'">'+b.id+'</a></td><td>'+sc.name+'</td><td>'+b.cohort+'</td><td>'+b.kg+' kg</td><td>'+b.cafe+'</td></tr>';}).join("");
-  app.innerHTML='<h1 style="font-size:1.8rem">Batches</h1><section class="card scroll"><table class="tbl"><thead><tr><th>Batch</th><th>School</th><th>Cohort</th><th>Kg</th><th>Source</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
-}
-function cbReport(){
-  var t=totals("all");
-  app.innerHTML='<div class="row between no-print"><h1 style="font-size:1.8rem">Sponsor report</h1><button class="btn" data-act="print">Print / save as PDF</button></div>'+
-  '<section class="card"><h2>Bean Again impact report</h2><p class="muted">Generated '+new Date().toLocaleDateString()+' · demo data</p>'+
-  '<div class="grid g3"><div><div class="stat">'+t.kg+' kg<small>verified</small></div></div><div><div class="stat">'+t.stu+'<small>students</small></div></div><div><div class="stat">'+t.hp.toFixed(0)+' kg CO₂e<small>handprint (estimate)</small></div></div></div>'+
-  '<h3 style="margin-top:20px">By school</h3><table class="tbl"><thead><tr><th>School</th><th>Cohort</th><th>Kg</th></tr></thead><tbody>'+DATA.schools.map(function(x){return '<tr><td>'+x.name+'</td><td>'+x.cohort+'</td><td>'+x.kg+'</td></tr>';}).join("")+'</tbody></table>'+
-  '<p class="muted" style="margin-top:16px">Method: kg are tied to batch IDs. The handprint figure multiplies verified kg by a placeholder factor and must be replaced with a validated one before publication.</p></section>';
-}
-
-/* ---------- batch page (opened from the CoffeeBot batches table) ---------- */
-function batchPage(id){
-  var b=DATA.batches.filter(function(x){return x.id===id;})[0];
-  if(!b){app.innerHTML='<section class="card"><h2>Batch not found</h2><a class="btn" href="#/">Home</a></section>';return;}
-  var sc=DATA.schools.filter(function(s){return s.id===b.school;})[0];
-  app.innerHTML='<div class="kicker" style="font-weight:700;letter-spacing:.15em;font-size:.8rem">BATCH</div><h1>'+b.id+'</h1><p>'+b.kg+' kg of grounds from <b>'+b.cafe+'</b> to <b>'+sc.name+'</b>.</p>'+
-  '<section class="card"><h3>Journey</h3><ul class="tl">'+b.events.map(function(e){return '<li class="'+e[2]+'"><b>'+e[1]+'</b><br><span class="muted">'+(e[0]==="pending"?"in progress":e[0])+'</span></li>';}).join("")+'</ul></section>';
-}
+/* ---------- batch page (opened from the CoffeeBot batches tab) ---------- */
+function batchPage(id){CB.batchPage(app,id);}
 
 /* ---------- demo clock (set from the terminal via demo.js, see README) ---------- */
 function syncDemo(){
@@ -519,7 +569,7 @@ document.addEventListener("click",function(e){
   else if(a==="answer")answer(i);
   else if(a==="buy"){var ac=DATA.accessories.filter(function(x){return x.id===id;})[0];if(S.beans>=ac.cost){S.beans-=ac.cost;S.owned.push(id);S.equipped[ac.slot]=id;save();route();}}
   else if(a==="equip"){var ac2=DATA.accessories.filter(function(x){return x.id===id;})[0];if(S.equipped[ac2.slot]===id)delete S.equipped[ac2.slot];else S.equipped[ac2.slot]=id;save();route();}
-  else if(a==="review"){S.reviewed[id]=el.dataset.v;var fl=allFlags().filter(function(x){return x.id===id;})[0];if(fl&&fl.pid){if(el.dataset.v==="ok")S.points+=fl.pts;else S.progress[fl.pid]=4;}save();route();}
+  else if(a==="review"){S.reviewed[id]=el.dataset.v;var fl=allFlags().filter(function(x){return x.id===id;})[0];if(fl&&fl.pid&&!fl.roster){if(el.dataset.v==="ok")S.points+=fl.pts;else{S.progress[fl.pid]=4;S.fails[fl.pid]=0;}}save();route();}
   else if(a==="print")window.print();
 });
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal();});
