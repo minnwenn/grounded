@@ -60,6 +60,15 @@ function syncContent(db, D = loadData()) {
   });
 }
 
+/* Fill an existing but EMPTY database (no schools and no accounts) with the demo data. Does nothing otherwise,
+ * so it can never touch a database that already has real schools or users. Returns true if it seeded. */
+function seedIfEmpty(db, D = loadData()) {
+  const n = t => db.prepare("SELECT COUNT(*) c FROM " + t).get().c;
+  if (n("schools") || n("users") || n("students")) return false;
+  seedDemo(db, D);
+  return true;
+}
+
 function createDb(file = DEFAULT_FILE, { demo = false } = {}) {
   const db = openDb(file);
   db.exec(fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8"));
@@ -68,7 +77,7 @@ function createDb(file = DEFAULT_FILE, { demo = false } = {}) {
   return db;
 }
 
-module.exports = { openDb, assertSchema, createDb, syncContent, DEFAULT_FILE, loadData };
+module.exports = { openDb, assertSchema, createDb, seedIfEmpty, syncContent, DEFAULT_FILE, loadData };
 
 if (require.main === module) {
   const file = DEFAULT_FILE, demo = process.argv.includes("--demo");
