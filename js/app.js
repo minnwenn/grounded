@@ -285,7 +285,7 @@ function openStep(pid,i){
   }else{
     modal('<h2>'+esc(s[0])+'</h2><p>'+esc(s[1])+'</p>'+
     '<p class="muted">The photo checker looks for: <b>'+esc(p.photoPrompt)+'</b></p><label for="photo">Choose or take a photo</label><br><input id="photo" data-pid="'+pid+'" type="file" accept="image/*" capture="environment">'+
-    '<div id="photoOut" class="muted" style="margin:10px 0">Show your finished project. Photos are compressed to under 400 kB and deleted after checking.</div>'+
+    '<div id="photoOut" class="muted" style="margin:10px 0">Show your finished project. Photos are compressed to under 400 kB and deleted after checking. If your teacher has to look at it, it is kept until they decide.</div>'+
     '<div class="row"><button id="submitPhoto" class="btn" disabled data-act="finish" data-id="'+pid+'" data-i="'+i+'">Submit</button><button class="btn btn-ghost" data-act="close">Cancel</button></div>');
     $("#photo").addEventListener("change",onPhoto);
     clipCheck.warm(); // start the one-time model download while the student reads the step
@@ -499,10 +499,11 @@ function schPhotos(){
   if(noClass())return;
   var f=allFlags(),open=f.filter(function(x){return !x.reviewed;}),done=f.filter(function(x){return x.reviewed;});
   var card=function(x){var r=x.reviewed;
-    return '<div class="card review-card"><div class="row between"><div><b class="keepcase">'+esc(x.student)+'</b> · '+esc(x.project)+'<br><span class="chip reason">'+esc(x.note)+'</span></div>'+
+    return '<div class="card review-card"><div class="row between"><div><b class="keepcase">'+esc(x.student)+'</b> · '+esc(x.project)+'<br><span class="chip reason">'+esc(x.note)+'</span>'+
+    (r?'':x.hasPhoto?'<br><a href="/api/teacher/photo?id='+esc(x.id)+'" target="_blank" rel="noopener"><img class="review-photo" alt="Photo submitted by '+esc(x.student)+' for '+esc(x.project)+'" src="/api/teacher/photo?id='+esc(x.id)+'" loading="lazy"></a>':'<br><span class="muted">No photo was kept for this one (sample data, or it was submitted before photos were stored).</span>')+'</div>'+
     (r?'<span class="chip '+(r==="ok"?"ok":"bad")+'">'+(r==="ok"?"✓ approved, counts as verified":"↺ sent back to redo")+'</span>':
     '<div class="row"><button class="btn small" data-act="review" data-id="'+x.id+'" data-v="ok">Approve</button><button class="btn small btn-ghost" data-act="review" data-id="'+x.id+'" data-v="redo">Ask to redo</button></div>')+'</div></div>';};
-  app.innerHTML=teacherHead("Photos to review","Only photos the AI couldn't verify come here: ones it was unsure about, or that still failed after 3 retakes. Approving counts the project as verified. Redo sends the student back to the photo step.")+
+  app.innerHTML=teacherHead("Photos to review","Only photos the AI couldn't verify come here: ones it was unsure about, or that still failed after 3 retakes. Approving counts the project as verified. Redo sends the student back to the photo step. The photo is deleted as soon as you decide.")+
   '<div class="stack">'+(open.length?open.map(card).join(""):'<section class="card"><p>Nothing waiting. The AI has verified every photo so far.</p></section>')+
   (done.length?'<h3 style="margin-top:20px">Reviewed</h3>'+done.map(card).join(""):'')+'</div>';
 }

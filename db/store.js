@@ -83,8 +83,8 @@ function createStore(db, D, opts = {}) {
     const c = q1("SELECT c.id,c.name,c.code,sc.name school FROM classes c JOIN schools sc ON sc.id=c.school_id WHERE c.teacher_id=? ORDER BY c.id LIMIT 1", userId);
     const base = { user: { role: "teacher", name: u.name }, today: today(), evening: !!demo().evening, token: demo().token || "", demoDay: demo().day };
     if (!c) return Object.assign(base, { cls: null, roster: [], flags: [], missions: [], quiz7: [0, 0, 0, 0, 0, 0, 0] });
-    const flag = r => ({ id: "f" + r.id, student: r.student, project: PROJECTS[r.project_id].name, pid: r.project_id, pts: PROJECTS[r.project_id].pts, note: r.note || "Needs a teacher's look", status: r.status, reviewed: r.reviewed_by ? (r.status === "approved" ? "ok" : "redo") : null });
-    const flags = qa("SELECT ps.id,ps.project_id,ps.note,ps.status,ps.reviewed_by,s.name student FROM photo_submissions ps JOIN students s ON s.id=ps.student_id WHERE s.class_id=? AND (ps.status='pending' OR ps.reviewed_by IS NOT NULL) ORDER BY ps.id DESC", c.id).map(flag);
+    const flag = r => ({ id: "f" + r.id, student: r.student, project: PROJECTS[r.project_id].name, pid: r.project_id, pts: PROJECTS[r.project_id].pts, note: r.note || "Needs a teacher's look", status: r.status, hasPhoto: !!r.has_photo, reviewed: r.reviewed_by ? (r.status === "approved" ? "ok" : "redo") : null });
+    const flags = qa("SELECT ps.id,ps.project_id,ps.note,ps.status,ps.reviewed_by,s.name student,EXISTS(SELECT 1 FROM photo_images i WHERE i.submission_id=ps.id) has_photo FROM photo_submissions ps JOIN students s ON s.id=ps.student_id WHERE s.class_id=? AND (ps.status='pending' OR ps.reviewed_by IS NOT NULL) ORDER BY ps.id DESC", c.id).map(flag);
     const quiz7 = [];
     for (let k = 6; k >= 0; k--) {
       const r = q1("SELECT COUNT(*) n, COALESCE(SUM(correct),0) ok FROM quiz_answers WHERE quiz_date=? AND student_id IN (SELECT id FROM students WHERE class_id=?)", dayToDate(today() - k), c.id);
@@ -121,7 +121,7 @@ function createStore(db, D, opts = {}) {
     return Object.assign({}, r, r.verdict === "unsure" ? { reason: r.stage === "ai" ? "ai-unsure" : "local-unsure" } : {});
   }
 
-  function submit(sid, pid, r) {
+  function submit(sid, pid, r, image) {
     const p = PROJECTS[pid], sp = q1("SELECT steps_done,fails FROM student_projects WHERE student_id=? AND project_id=?", sid, pid);
     if (!sp || sp.steps_done !== 4) bad("Nothing to submit");
     const level0 = level(sum(sid, "points")).n;
@@ -130,8 +130,9 @@ function createStore(db, D, opts = {}) {
       ledger(sid, "beans", 10, "photo_verified", pid);
       const unsure = r.verdict === "unsure";
       const note = !unsure ? null : r.reason === "retakes" ? "Failed the photo check " + sp.fails + " times" : r.stage === "ai" ? "AI unsure (confidence " + (+r.confidence || 0).toFixed(2) + ")" : r.stage === "ai-down" ? "AI check was unavailable" : "Quick check unsure, AI unavailable";
-      run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,note,mode,status) VALUES (?,?,?,?,?,?,?,?)",
+      const sub = run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,note,mode,status) VALUES (?,?,?,?,?,?,?,?)",
         sid, pid, r.verdict, r.confidence ?? null, String(r.feedback || "").slice(0, 300), note, r.mode === "ai" ? "ai" : "demo", unsure ? "pending" : "approved");
+      if (unsure && image) run("INSERT INTO photo_images(submission_id,jpeg) VALUES (?,?)", Number(sub.lastInsertRowid), image);   // kept only until the teacher decides
       if (!unsure) ledger(sid, "points", p.pts, "photo_verified", pid);
     });
     touch(sid);
@@ -185,6 +186,7 @@ function createStore(db, D, opts = {}) {
     const r = q1("SELECT ps.id,ps.student_id,ps.project_id,ps.status FROM photo_submissions ps JOIN students s ON s.id=ps.student_id WHERE ps.id=? AND s.class_id=?", id, cid);
     if (!r || r.status !== "pending") bad("That photo is not waiting for review", 404);
     tx(() => {
+      run("DELETE FROM photo_images WHERE submission_id=?", id);
       if (verdict === "ok") {
         run("UPDATE photo_submissions SET status='approved', reviewed_by=?, reviewed_at=datetime('now') WHERE id=?", userId, id);
         ledger(r.student_id, "points", PROJECTS[r.project_id].pts, "teacher_approved", r.project_id);
@@ -193,6 +195,12 @@ function createStore(db, D, opts = {}) {
         run("UPDATE student_projects SET steps_done=4, fails=0, completed_at=NULL WHERE student_id=? AND project_id=?", r.student_id, r.project_id);
       }
     });
+  }
+  /* The stored photo for a flag, only while it is still waiting and only for the teacher whose class it belongs to. */
+  function reviewPhoto(userId, flagId) {
+    const id = Number(String(flagId).replace(/^f/, "")), cid = teacherClassId(userId);
+    const r = q1("SELECT i.jpeg FROM photo_images i JOIN photo_submissions ps ON ps.id=i.submission_id JOIN students s ON s.id=ps.student_id WHERE ps.id=? AND ps.status='pending' AND s.class_id=?", id, cid);
+    return r ? Buffer.from(r.jpeg) : null;
   }
   function addMission(userId, name, goal) {
     name = String(name || "").trim().slice(0, 60);
@@ -203,7 +211,7 @@ function createStore(db, D, opts = {}) {
     return q1("SELECT s.id FROM students s WHERE s.id=? AND s.class_id=?", studentId, teacherClassId(userId)) || bad("No such student in your class", 404);
   }
 
-  return { HttpError, today, level, studentState, teacherData, begin, step, recordCheck, submit, answerQuiz, buy, equip, review, addMission, studentInTeacherClass, touch, q1, qa, run };
+  return { HttpError, today, level, studentState, teacherData, begin, step, recordCheck, submit, answerQuiz, buy, equip, review, reviewPhoto, addMission, studentInTeacherClass, touch, q1, qa, run };
 }
 
 module.exports = { createStore, HttpError };

@@ -6,6 +6,7 @@ const { hashPassword, verifyPassword } = require("./db/auth");
 const { HttpError } = require("./db/store");
 
 const COOKIE = "grounded_sid", DAYS = 30;
+const RAW = Symbol("raw response already sent");
 const sha = t => crypto.createHash("sha256").update(t).digest("hex");
 
 function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCookies }) {
@@ -72,7 +73,9 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
       r = { verdict: local.verdict, confidence: Math.max(0, Math.min(1, Number(local.confidence) || 0)), feedback: text(local.feedback, 300), stage: "local-only", mode: "demo" };
     }
     const out = store.recordCheck(sid, pid, r, retakes);
-    if (out.verdict !== "fail") checks.set(sid + ":" + pid, Object.assign({ ts: Date.now() }, out));
+    // Keep the JPEG with the pending check only when a teacher may need it; it is stored at Submit, and only if the verdict is "unsure".
+    const b64 = String(body.image || ""), image = out.verdict === "unsure" && /^\/9j\/[A-Za-z0-9+/=]+$/.test(b64) && b64.length * 0.75 <= 600 * 1024 ? Buffer.from(b64, "base64") : null;
+    if (out.verdict !== "fail") checks.set(sid + ":" + pid, Object.assign({ ts: Date.now(), image }, out));
     else checks.delete(sid + ":" + pid);
     return out;
   }
@@ -131,7 +134,7 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
       ctx.sid = needStudent(ctx.session);
       const pid = text(ctx.body.pid, 20), key = ctx.sid + ":" + pid, c = checks.get(key);
       if (!c || Date.now() - c.ts > CHECK_TTL) throw new HttpError(400, "Please check your photo again.");
-      const result = store.submit(ctx.sid, pid, c); checks.delete(key);
+      const result = store.submit(ctx.sid, pid, c, c.image); checks.delete(key);
       return Object.assign(stu(ctx), { result });
     },
     "POST /api/quiz": async ctx => { ctx.sid = needStudent(ctx.session); const r = store.answerQuiz(ctx.sid, Number(ctx.body.pick)); return Object.assign(stu(ctx), { result: r }); },
@@ -139,6 +142,13 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
     "POST /api/equip": async ctx => { ctx.sid = needStudent(ctx.session); store.equip(ctx.sid, text(ctx.body.id, 30), !!ctx.body.on); return stu(ctx); },
     /* teachers */
     "GET /api/teacher": async ctx => store.teacherData(needTeacher(ctx.session)),
+    "GET /api/teacher/photo": async ({ session, res, url }) => {
+      const jpeg = store.reviewPhoto(needTeacher(session), text(url.searchParams.get("id"), 20));
+      if (!jpeg) throw new HttpError(404, "No photo stored");
+      res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "Content-Length": jpeg.length });
+      res.end(jpeg);
+      return RAW;
+    },
     "POST /api/teacher/review": async ctx => { const t = needTeacher(ctx.session); store.review(t, text(ctx.body.id, 20), ctx.body.v === "ok" ? "ok" : "redo"); return store.teacherData(t); },
     "POST /api/teacher/mission": async ctx => { const t = needTeacher(ctx.session); store.addMission(t, ctx.body.name, Number(ctx.body.goal)); return store.teacherData(t); },
     "POST /api/teacher/reset-password": async ctx => {
@@ -163,7 +173,8 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
         if (!/^application\/json/.test(req.headers["content-type"] || "")) throw new HttpError(415, "JSON only");
       }
       const body = req.method === "POST" ? await readBody(req, url.pathname === "/api/check" ? 1.2e6 : 5000) : {};
-      const out = await route({ req, res, body, session: sessionOf(req) });
+      const out = await route({ req, res, url, body, session: sessionOf(req) });
+      if (out === RAW) return true;
       if (out && out.headers) json(res, 200, out.body, out.headers); else json(res, 200, out);
     } catch (e) {
       if (e instanceof HttpError) return json(res, e.status, { error: e.message }), true;

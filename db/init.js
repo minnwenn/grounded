@@ -38,6 +38,12 @@ const tx = (db, fn) => { db.exec("BEGIN"); try { const r = fn(); db.exec("COMMIT
 /* Upserts levels, projects, weeks, accessories and the quiz bank from js/data.js. Safe to run on every start:
  * rows are updated in place, so student progress that points at them is never touched. */
 function syncContent(db, D = loadData()) {
+  db.exec(`CREATE TABLE IF NOT EXISTS photo_images (           -- only photos a teacher must review; deleted once they decide
+  submission_id  INTEGER PRIMARY KEY REFERENCES photo_submissions(id) ON DELETE CASCADE,
+  jpeg           BLOB NOT NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);   // added after first release: lets older databases pick it up
   tx(db, () => {
     const run = (sql, ...a) => db.prepare(sql).run(...a);
     D.levels.forEach(l => run("INSERT INTO levels VALUES (?,?,?) ON CONFLICT(n) DO UPDATE SET name=excluded.name, at=excluded.at", l.n, l.name, l.at));
