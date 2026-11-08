@@ -21,7 +21,7 @@ function applyState(st){
   if(!st||!st.user){S=fresh();T=null;return st;}
   S.user=st.user;S.evening=!!st.evening;S.demoToken=st.token;S.demoDay=st.demoDay;S.today=st.today;
   if(st.user.role==="student"){
-    ["cls","points","beans","streak","lastQuizDay","quizPick","progress","fails","owned","equipped","roster","missions","schoolClasses"].forEach(function(k){S[k]=st[k];});
+    ["cls","points","beans","streak","lastQuizDay","quizPick","quizQ","progress","fails","owned","equipped","roster","missions","schoolClasses"].forEach(function(k){S[k]=st[k];});
   }else if(st.user.role==="teacher")T=st;
   return st;
 }
@@ -53,6 +53,18 @@ var MOOD_TEXT={
 function lvl(){var L=DATA.levels,c=L[0];L.forEach(function(l){if(S.points>=l.at)c=l;});return c;}
 function nextLvl(){var L=DATA.levels,c=lvl();return L[c.n]||null;}
 function projById(id){return DATA.projects.filter(function(x){return x.id===id;})[0];}
+/* The Bean Buddy's sprout grows with every project step the student finishes (20 steps in all). */
+var GROW_AT=[0,1,3,6,10,15,20];
+function growth(){
+  var n=stepsDone(),st=0;GROW_AT.forEach(function(t,i){if(n>=t)st=i;});
+  var next=GROW_AT[st+1];
+  return {stage:st,steps:n,max:GROW_AT.length-1,toNext:next===undefined?0:next-n};
+}
+function growthText(){
+  var g=growth();
+  return g.stage>=g.max?"Your sprout is in full bloom! Every step you finished helped it grow.":
+    "Your sprout grows with every project step. Finish "+g.toNext+" more step"+(g.toNext===1?"":"s")+" and it grows again.";
+}
 function stepsDone(){return Object.keys(S.progress).reduce(function(a,k){return a+S.progress[k];},0);}
 function projectsDone(){return DATA.projects.filter(function(p){return S.progress[p.id]>=5;}).length;}
 /* Class missions are measured on the server from the class's verified projects and steps. */
@@ -215,7 +227,7 @@ function stuPath(){
       return '<div class="row between" style="margin:8px 0"><div><b>'+esc(p.name)+'</b><br><span class="muted">Earn '+p.pts+' points</span></div>'+act+'</div>';}).join("")+
       '<p class="muted">Want to work on something else? <a href="#/student/projects">Browse all projects</a>.</p></section>';
   }
-  html+='</div><aside class="stack"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
+  html+='</div><aside class="stack"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7,growth().stage)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
   app.innerHTML=html;
 }
 function stuProject(){
@@ -244,7 +256,7 @@ function stuProject(){
     if(n>=5)html+='<p><b>Project complete!</b> Your plant is fully grown.</p>';
     else html+='<p class="muted">Finish the photo step to earn <b>'+p.pts+' points</b>.</p>';
   }
-  html+='</section><aside class="stack"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
+  html+='</section><aside class="stack"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7,growth().stage)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
   app.innerHTML=html;
 }
 function stuProjects(){
@@ -332,8 +344,9 @@ function finishStep(pid,i){
 /* ---------- student: buddy, quiz, wardrobe ---------- */
 function todaysQ(){var n=DATA.quiz.length;return DATA.quiz[((today()%n)+n)%n];} // a new question each local day
 function stuBuddy(){
-  var done=gap()===0,q=todaysQ();
-  var html=stuHeader()+'<div class="grid g2"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),12)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div>'+
+  var done=gap()===0,q=(done&&S.quizQ!=null&&DATA.quiz[S.quizQ])||todaysQ(); // after answering, show the question that was answered
+  var html=stuHeader()+'<div class="grid g2"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),12,growth().stage)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div>'+
+  bar(growth().stage/growth().max*100)+'<p class="muted" style="margin:6px 0 10px">Sprout stage '+growth().stage+' of '+growth().max+'. '+growthText()+'</p>'+
   '<p class="muted">Moods: happy when done, sleepy in the evening if not, sad if a day is missed, celebrating at 3, 7, 14 and 30 days.</p></section>';
   html+='<section class="card"><h2>Daily quiz</h2>';
   if(done&&S.quizPick===null||done&&S.quizPick===undefined){html+='<p>All done for today. Come back tomorrow to keep your streak!</p>';}

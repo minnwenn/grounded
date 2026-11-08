@@ -102,8 +102,13 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
       if (!name) throw new HttpError(400, "Please enter your name.");
       if (pw.length < 6 || pw.length > 100) throw new HttpError(400, "Choose a password of at least 6 characters.");
       if (q1("SELECT 1 FROM students WHERE class_id=? AND name=? COLLATE NOCASE", cls.id, name)) throw new HttpError(409, "Someone in this class already uses that name. Log in, or add your initial to your name.");
-      const sid = Number(run("INSERT INTO students(class_id,name,password_hash) VALUES (?,?,?)", cls.id, name, hashPassword(pw)).lastInsertRowid);
-      run("INSERT INTO buddies VALUES (?,0)", sid);
+      let sid;
+      db.exec("BEGIN");                                          // all or nothing: never leave a half-made student behind
+      try {
+        sid = Number(run("INSERT INTO students(class_id,name,password_hash) VALUES (?,?,?)", cls.id, name, hashPassword(pw)).lastInsertRowid);
+        run("INSERT INTO buddies VALUES (?,0)", sid);
+        db.exec("COMMIT");
+      } catch (e) { db.exec("ROLLBACK"); throw e; }
       store.touch(sid);
       return { headers: startSession(res, "student", sid), body: store.studentState(sid) };
     },

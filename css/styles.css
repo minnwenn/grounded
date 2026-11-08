@@ -88,6 +88,12 @@ svg.px{image-rendering:pixelated;shape-rendering:crispEdges;display:block}
 .buddy-stage.celebrate svg{animation:hop .5s steps(3) infinite}
 .buddy-stage.sad svg,.buddy-stage.sleepy svg{animation:none}
 @keyframes bob{50%{transform:translateY(-4px)}}
+.sprout-sway{transform-box:fill-box;transform-origin:50% 100%;animation:sway 2.4s steps(2) infinite}
+@keyframes sway{50%{transform:rotate(5deg)}}
+.sparkle{animation:twinkle 1.8s steps(2) infinite}
+@keyframes twinkle{50%{opacity:.3}}
+.buddy-stage.sad .sprout-sway,.buddy-stage.mouldy .sprout-sway,.buddy-stage.sleepy .sprout-sway{animation:none}
+@media (prefers-reduced-motion:reduce){.sprout-sway,.sparkle,.buddy-stage svg{animation:none!important}}
 @keyframes hop{50%{transform:translateY(-14px)}}
 .speech{background:var(--paper);border:3px solid var(--wine);padding:6px 12px;font-size:.9rem;position:relative;margin-bottom:12px}
 

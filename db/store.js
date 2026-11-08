@@ -65,13 +65,13 @@ function createStore(db, D, opts = {}) {
       if (a.how === "buy") owned.push(a.id);
       if (r.equipped) equipped[a.slot] = a.id;
     });
-    const last = lastQuizDay(sid), pick = q1("SELECT pick_idx p FROM quiz_answers WHERE student_id=? AND quiz_date=?", sid, dayToDate(today()));
+    const last = lastQuizDay(sid), pick = q1("SELECT pick_idx p, question_id qid FROM quiz_answers WHERE student_id=? AND quiz_date=?", sid, dayToDate(today()));
     return {
       user: { role: "student", name: s.name },
       cls: { name: s.cname, code: s.code, school: s.sname },
       today: today(), evening: !!demo().evening, token: demo().token || "", demoDay: demo().day,
       points, beans: sum(sid, "beans"), streak: (q1("SELECT streak FROM buddies WHERE student_id=?", sid) || { streak: 0 }).streak,
-      lastQuizDay: last, quizPick: pick ? pick.p : null, progress, fails, owned, equipped,
+      lastQuizDay: last, quizPick: pick ? pick.p : null, quizQ: pick ? pick.qid - 1 : null, progress, fails, owned, equipped,
       roster: roster(s.class_id, sid), missions: missions(s.class_id),
       // other classes at the same school, for the school forest: one plant per student who has begun a project
       schoolClasses: qa("SELECT c.name, (SELECT COUNT(*) FROM students x WHERE x.class_id=c.id AND EXISTS (SELECT 1 FROM student_projects sp WHERE sp.student_id=x.id)) n FROM classes c WHERE c.school_id=(SELECT school_id FROM classes WHERE id=?) AND c.id<>? ORDER BY c.name", s.class_id, s.class_id)
