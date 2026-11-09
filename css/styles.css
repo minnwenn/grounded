@@ -275,3 +275,25 @@ tr.you td{font-weight:700;background:rgba(244,206,91,.35)}
 .photo-tile{margin:0;display:flex;flex-direction:column;gap:6px}
 .tile-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;border:2px solid var(--wine,#721F1F);background:#f3e4b8}
 .photo-tile figcaption{display:flex;flex-direction:column;gap:2px;font-size:.85rem;align-items:flex-start}
+/* the garden scene */
+.garden-scene{border:3px solid var(--wine,#721F1F);border-radius:6px}
+.garden-scene .cloud{animation:drift 80s linear infinite}
+@keyframes drift{from{transform:translateX(-30px)}to{transform:translateX(var(--sw))}}
+.garden-scene .bf{animation:flyacross 26s linear infinite}
+@keyframes flyacross{from{transform:translateX(-8px)}to{transform:translateX(var(--sw))}}
+.garden-scene .bfy{animation:bob2 1.4s steps(4) infinite}
+@keyframes bob2{0%{transform:translateY(0)}25%{transform:translateY(-3px)}50%{transform:translateY(-1px)}75%{transform:translateY(-4px)}100%{transform:translateY(0)}}
+.garden-scene .you-arrow{animation:arrow 1s steps(2) infinite}
+@keyframes arrow{50%{transform:translateY(-2px)}}
+@media (prefers-reduced-motion:reduce){.garden-scene .cloud,.garden-scene .bf,.garden-scene .bfy,.garden-scene .you-arrow{animation:none!important}}
+/* choosing a plant */
+.plant-prompt{border-color:var(--olive,#9A922B)}
+.plant-choices{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:10px;max-height:52vh;overflow:auto;padding:4px}
+.plant-card{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding:10px 8px;background:#fff7d6;border:3px solid var(--wine,#721F1F);border-radius:8px;cursor:pointer;font:inherit;color:inherit}
+.plant-card:hover{background:#ffefb0}
+.plant-card.on{background:#f4ce5b;box-shadow:0 0 0 3px var(--wine,#721F1F)}
+.plant-card .muted{font-size:.78rem;line-height:1.3}
+.mine{display:flex;flex-wrap:wrap;gap:14px}
+.mine-item{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:.85rem;min-width:96px;text-align:center}
+.garden-legend{margin-top:12px;flex-wrap:wrap}
+.garden-legend span{display:inline-flex;align-items:center;gap:6px}

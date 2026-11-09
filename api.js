@@ -148,6 +148,7 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
     },
     "POST /api/quiz": async ctx => { ctx.sid = needStudent(ctx.session); const r = store.answerQuiz(ctx.sid, Number(ctx.body.pick)); return Object.assign(stu(ctx), { result: r }); },
     "POST /api/buy": async ctx => { ctx.sid = needStudent(ctx.session); store.buy(ctx.sid, text(ctx.body.id, 30)); return stu(ctx); },
+    "POST /api/plant": async ctx => { ctx.sid = needStudent(ctx.session); store.plant(ctx.sid, text(ctx.body.pid, 20), text(ctx.body.species, 30)); return stu(ctx); },
     "POST /api/equip": async ctx => { ctx.sid = needStudent(ctx.session); store.equip(ctx.sid, text(ctx.body.id, 30), !!ctx.body.on); return stu(ctx); },
     /* teachers */
     "GET /api/teacher": async ctx => store.teacherData(needTeacher(ctx.session)),

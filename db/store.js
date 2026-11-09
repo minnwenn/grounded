@@ -73,8 +73,12 @@ function createStore(db, D, opts = {}) {
       points, beans: sum(sid, "beans"), streak: (q1("SELECT streak FROM buddies WHERE student_id=?", sid) || { streak: 0 }).streak,
       lastQuizDay: last, quizPick: pick ? pick.p : null, quizQ: pick ? pick.qid - 1 : null, progress, fails, owned, equipped,
       roster: roster(s.class_id, sid), missions: missions(s.class_id),
-      // other classes at the same school, for the school forest: one plant per student who has begun a project
-      schoolClasses: qa("SELECT c.name, (SELECT COUNT(*) FROM students x WHERE x.class_id=c.id AND EXISTS (SELECT 1 FROM student_projects sp WHERE sp.student_id=x.id)) n FROM classes c WHERE c.school_id=(SELECT school_id FROM classes WHERE id=?) AND c.id<>? ORDER BY c.name", s.class_id, s.class_id)
+      // finished projects that still need a plant, the class garden, and the other classes' gardens (no names)
+      plantable: plantable(sid),
+      garden: qa("SELECT gp.id,gp.student_id,s.name,gp.species,gp.project_id,gp.planted_day FROM garden_plants gp JOIN students s ON s.id=gp.student_id WHERE s.class_id=? ORDER BY gp.planted_day,gp.id", s.class_id)
+        .map(r => ({ id: r.id, who: r.name, you: r.student_id === sid, species: r.species, project: PROJECTS[r.project_id] ? PROJECTS[r.project_id].name : r.project_id, stage: plantStage(r.planted_day) })),
+      schoolGarden: qa("SELECT c.name cls, gp.species, gp.planted_day FROM garden_plants gp JOIN students s ON s.id=gp.student_id JOIN classes c ON c.id=s.class_id WHERE c.school_id=(SELECT school_id FROM classes WHERE id=?) AND c.id<>? ORDER BY gp.planted_day,gp.id", s.class_id, s.class_id)
+        .map(r => ({ cls: r.cls, species: r.species, stage: plantStage(r.planted_day) }))
     };
   }
 
@@ -157,6 +161,24 @@ function createStore(db, D, opts = {}) {
     return { good };
   }
 
+  /* ----- the class garden ----- */
+  const SPECIES = new Set((D.plants || []).map(p => p.id));
+  const plantStage = day => { const d = today() - day; return d < 1 ? 1 : d < 3 ? 2 : 3; };   // sprout today, growing from tomorrow, in bloom after 3 days
+  /* projects the student has finished (verified, not waiting for a teacher) but not yet planted a plant for */
+  function plantable(sid) {
+    return qa("SELECT sp.project_id pid FROM student_projects sp WHERE sp.student_id=? AND sp.steps_done=5 " +
+      "AND NOT EXISTS (SELECT 1 FROM photo_submissions ps WHERE ps.student_id=sp.student_id AND ps.project_id=sp.project_id AND ps.status='pending') " +
+      "AND NOT EXISTS (SELECT 1 FROM garden_plants g WHERE g.student_id=sp.student_id AND g.project_id=sp.project_id) ORDER BY sp.completed_at, sp.project_id", sid).map(r => r.pid);
+  }
+  function plant(sid, pid, species) {
+    if (!SPECIES.has(species)) bad("Pick one of the plants");
+    if (!PROJECTS[pid]) bad("Unknown project");
+    if (q1("SELECT 1 FROM garden_plants WHERE student_id=? AND project_id=?", sid, pid)) bad("You already planted something for that project", 409);
+    if (!plantable(sid).includes(pid)) bad("Finish this project and get it verified first, then you can plant", 403);
+    run("INSERT INTO garden_plants(student_id,project_id,species,planted_day) VALUES (?,?,?,?)", sid, pid, species, today());
+    touch(sid);
+  }
+
   function unlocked(sid, a) {
     if (a.how === "buy") return !!q1("SELECT 1 FROM student_accessories WHERE student_id=? AND accessory_id=?", sid, a.id);
     if (a.how === "streak") return streakNow(sid) >= a.need;
@@ -221,7 +243,7 @@ function createStore(db, D, opts = {}) {
     return q1("SELECT s.id FROM students s WHERE s.id=? AND s.class_id=?", studentId, teacherClassId(userId)) || bad("No such student in your class", 404);
   }
 
-  return { HttpError, today, level, studentState, teacherData, begin, step, recordCheck, submit, answerQuiz, buy, equip, review, classPhoto, setClassCode, addMission, studentInTeacherClass, touch, q1, qa, run };
+  return { HttpError, today, level, studentState, teacherData, begin, step, recordCheck, submit, answerQuiz, buy, equip, review, classPhoto, setClassCode, plant, plantable, addMission, studentInTeacherClass, touch, q1, qa, run };
 }
 
 module.exports = { createStore, HttpError };

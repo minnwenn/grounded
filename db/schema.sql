@@ -175,6 +175,18 @@ CREATE TABLE student_accessories (
   PRIMARY KEY (student_id, accessory_id)
 );
 
+-- ---------- the class garden ----------
+-- A student chooses a plant for each project they finish. It is planted on the app's calendar day and grows over the
+-- next days (see plantStage in db/store.js).
+CREATE TABLE IF NOT EXISTS garden_plants (
+  id           INTEGER PRIMARY KEY,
+  student_id   INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  project_id   TEXT NOT NULL REFERENCES projects(id),
+  species      TEXT NOT NULL,                   -- an id from `plants` in js/data.js
+  planted_day  INTEGER NOT NULL,                -- days since 1970-01-01 on the app clock (db/clock.js)
+  UNIQUE (student_id, project_id)
+);
+
 -- ---------- class missions ----------
 CREATE TABLE missions (
   id          INTEGER PRIMARY KEY,

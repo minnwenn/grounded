@@ -8,7 +8,7 @@ var app=$("#app"), nav=$("#nav");
 /* ---------- state ---------- */
 // S: the logged-in student's state (or just the user, for a teacher or CoffeeBot) plus small UI bits. T: the teacher's class.
 function fresh(){return {user:null,role:null,today:0,evening:false,beans:0,streak:0,lastQuizDay:0,quizPick:null,points:0,
-  owned:[],equipped:{},progress:{},fails:{},roster:[],missions:[],schoolClasses:[],cls:null,tab:{}};}
+  owned:[],equipped:{},progress:{},fails:{},roster:[],missions:[],plantable:[],garden:[],schoolGarden:[],cls:null,tab:{}};}
 var S=fresh(), T=null;
 function save(){}
 function api(method,path,body){
@@ -21,7 +21,7 @@ function applyState(st){
   if(!st||!st.user){S=fresh();T=null;return st;}
   S.user=st.user;S.evening=!!st.evening;S.demoToken=st.token;S.demoDay=st.demoDay;S.today=st.today;
   if(st.user.role==="student"){
-    ["cls","points","beans","streak","lastQuizDay","quizPick","quizQ","progress","fails","owned","equipped","roster","missions","schoolClasses"].forEach(function(k){S[k]=st[k];});
+    ["cls","points","beans","streak","lastQuizDay","quizPick","quizQ","progress","fails","owned","equipped","roster","missions","plantable","garden","schoolGarden"].forEach(function(k){S[k]=st[k];});
   }else if(st.user.role==="teacher")T=st;
   return st;
 }
@@ -227,7 +227,7 @@ function stuPath(){
       return '<div class="row between" style="margin:8px 0"><div><b>'+esc(p.name)+'</b><br><span class="muted">Earn '+p.pts+' points</span></div>'+act+'</div>';}).join("")+
       '<p class="muted">Want to work on something else? <a href="#/student/projects">Browse all projects</a>.</p></section>';
   }
-  html+='</div><aside class="stack"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7,growth().stage)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
+  html+='</div><aside class="stack">'+plantPrompt()+'<section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7,growth().stage)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
   app.innerHTML=html;
 }
 function stuProject(){
@@ -242,7 +242,7 @@ function stuProject(){
   var html=stuHeader()+tabs("proj",started.map(function(x){return [x.id,esc(x.name)];}),p.id)+'<p><a href="#/student">Back to my 4-week journey</a> · <a href="#/student/projects">Choose another project</a></p>';
   html+='<div class="grid g2"><section class="card"><h2>'+esc(p.name)+'</h2>';
   if(n===undefined){
-    html+='<p>Beginning this project plants a new seed in your class garden for everyone to enjoy.</p><button class="btn" data-act="begin" data-id="'+p.id+'">Begin project</button>';
+    html+='<p>Finish this project and you can choose a plant for your class garden.</p><button class="btn" data-act="begin" data-id="'+p.id+'">Begin project</button>';
   }else{
     html+=bar(n/5*100)+'<p class="muted" style="margin-top:6px">'+n+' of 5 steps</p><div class="path">';
     p.steps.forEach(function(s,i){
@@ -256,7 +256,7 @@ function stuProject(){
     if(n>=5)html+='<p><b>Project complete!</b> Your plant is fully grown.</p>';
     else html+='<p class="muted">Finish the photo step to earn <b>'+p.pts+' points</b>.</p>';
   }
-  html+='</section><aside class="stack"><section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7,growth().stage)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
+  html+='</section><aside class="stack">'+plantPrompt()+'<section class="card gold"><div class="buddy-stage '+mood()+'">'+buddySVG(mood(),eqObj(),7,growth().stage)+'</div><div class="speech">'+MOOD_TEXT[mood()]+'</div><a class="btn" href="#/student/buddy">Daily quiz</a></section>'+missionCard()+'</aside></div>';
   app.innerHTML=html;
 }
 function stuProjects(){
@@ -338,7 +338,7 @@ function finishStep(pid,i){
     act(api("POST","submit",{pid:pid}),function(st){
       var r=st.result;lastCheck=null;
       toast(r.sent?"Sent to your teacher. Your "+r.pts+" points arrive once they approve.":r.levelUp?"Level up! You are now "+r.levelUp+"!":"Verified! +"+r.pts+" points");
-    });
+    }).then(function(){if(S.plantable&&S.plantable.indexOf(pid)>-1)choosePlant(pid);});   // verified: pick a plant now
   }else act(api("POST","step",{pid:pid,i:i}),function(){toast("Step done! +5 beans");});
 }
 
@@ -375,65 +375,43 @@ function answer(i){
 }
 
 /* ---------- student: garden ---------- */
-function rnd(n){var x=Math.sin(n*9301+49297)*233280;return x-Math.floor(x);}
-var FOREST_COLORS=["#BB758A","#F4CE5B","#721F1F","#FFE597"];
-var KINDS=["flower","bush","tree"];
-/* Isometric island: tiles on a grid, plants stand on tiles, drawn back to front. */
-function forest(plants){
-  var n=Math.max(4,Math.ceil(Math.sqrt(plants.length*1.35))),tw=64,th=32,depth=22,sc=tw/15;
-  var tiles=[];for(var c=0;c<n;c++)for(var r=0;r<n;r++)tiles.push([c,r]);
-  var mid=[Math.floor(n/2),Math.floor(n/2)],you=null;
-  tiles=tiles.filter(function(t){return !(t[0]===mid[0]&&t[1]===mid[1]);});
-  tiles.sort(function(a,b){return rnd(a[0]*31+a[1]*7+1)-rnd(b[0]*31+b[1]*7+1);});
-  var placed=[],k=0;
-  plants.forEach(function(p){var t=p.you?mid:tiles[k++];if(t)placed.push({p:p,c:t[0],r:t[1]});});
-  placed.sort(function(a,b){return (a.c+a.r)-(b.c+b.r)||a.c-b.c;});
-  var X=function(c,r){return (c-r)*tw/2;},Y=function(c,r){return (c+r)*th/2;};
-  var W=n*tw,H=n*th+depth;
-  var g='<polygon points="'+X(0,n)+','+Y(0,n)+' '+X(0,n)+','+(Y(0,n)+depth)+' '+X(n,0)*0+','+0+' " fill="none"/>';
-  g='';
-  // dirt sides (left and right faces)
-  var L=[-W/2,n*th/2],B=[0,n*th],R=[W/2,n*th/2];
-  g+='<polygon points="'+L[0]+','+L[1]+' '+B[0]+','+B[1]+' '+B[0]+','+(B[1]+depth)+' '+L[0]+','+(L[1]+depth)+'" fill="#8a6a3a" stroke="#721F1F" stroke-width="2"/>';
-  g+='<polygon points="'+B[0]+','+B[1]+' '+R[0]+','+R[1]+' '+R[0]+','+(R[1]+depth)+' '+B[0]+','+(B[1]+depth)+'" fill="#6b4e2a" stroke="#721F1F" stroke-width="2"/>';
-  // grass tiles in a checker
-  for(var cc=0;cc<n;cc++)for(var rr=0;rr<n;rr++){
-    var x=X(cc,rr),y=Y(cc,rr);
-    g+='<polygon points="'+x+','+y+' '+(x+tw/2)+','+(y+th/2)+' '+x+','+(y+th)+' '+(x-tw/2)+','+(y+th/2)+'" fill="'+((cc+rr)%2?"#D9C97A":"#E3D391")+'"/>';
-  }
-  g+='<polygon points="0,0 '+R[0]+','+R[1]+' 0,'+n*th+' '+L[0]+','+L[1]+'" fill="none" stroke="#721F1F" stroke-width="2"/>';
-  placed.forEach(function(o,i){
-    var cx=X(o.c,o.r),cy=Y(o.c,o.r)+th/2+6;
-    if(o.p.you)g+='<polygon points="'+cx+','+(cy-th/2-2)+' '+(cx+tw/2-4)+','+(cy-8)+' '+cx+','+(cy+th/2-14)+' '+(cx-tw/2+4)+','+(cy-8)+'" fill="#F4CE5B" stroke="#721F1F" stroke-width="1.5"/>';
-    g+='<g transform="translate('+(cx-5*sc)+','+(cy-12*sc)+') scale('+sc+')"><title>'+esc(o.p.name)+'</title>'+forestInner(o.p.kind,o.p.stage,o.p.color)+'</g>';
-    if(o.p.you)g+='<g transform="translate('+cx+','+(cy-forestHeight(o.p.kind,o.p.stage)*sc-14)+')"><rect x="-17" y="-13" width="34" height="15" fill="#721F1F" stroke="#F4CE5B" stroke-width="1.5"/><text x="0" y="-2" text-anchor="middle" font-size="11" font-weight="700" fill="#FFE597" font-family="sans-serif">You</text></g>';
-  });
-  return '<div class="forest"><svg class="px" viewBox="'+(-W/2-6)+' -64 '+(W+12)+' '+(H+64+8)+'" width="100%" role="img" aria-label="Forest island with '+plants.length+' plants" style="display:block;max-width:'+Math.round(W*2.3)+'px">'+g+'</svg></div>';
+function plantName(id){var p=DATA.plants.filter(function(x){return x.id===id;})[0];return p?p.name:id;}
+/* a card inviting the student to plant, for each finished project that has no plant yet */
+function plantPrompt(){
+  if(!S.plantable||!S.plantable.length)return "";
+  var p=projById(S.plantable[0]),more=S.plantable.length-1;
+  return '<section class="card plant-prompt"><h3>Time to plant!</h3><p>You finished <b>'+esc(p.name)+'</b>. Choose a plant for your class garden'+(more?' ('+more+' more waiting after this one)':'')+'.</p><button class="btn" data-act="chooseplant" data-id="'+p.id+'">Choose a plant</button></section>';
 }
-/* One plant per classmate who has begun a project; it grows with their progress (started 1, photo sent 2, verified 3 per project) */
-function classPlants(){
-  var rank={none:0,started:1,sent:2,verified:3},P=DASH.CONFIG.projectOrder;
-  var list=classRoster().filter(function(r){return !r.you&&P.some(function(p){return r.status[p]!=="none";});}).map(function(r,i){
-    var score=P.reduce(function(a,p){return a+rank[r.status[p]];},0);
-    return {name:r.name,stage:Math.max(1,Math.min(3,Math.round(score/4))),kind:KINDS[i%3],color:FOREST_COLORS[(r.name.length+i)%FOREST_COLORS.length]};});
-  list.push({name:"You",you:true,stage:Math.max(0,Math.min(3,Math.ceil(stepsDone()/4))),kind:"flower",color:"#BB758A"});
-  return list;
+var plantPick=null;
+function choosePlant(pid){
+  var p=projById(pid);plantPick={pid:pid,species:null};
+  modal('<h2>Choose a plant for the class garden</h2><p>You finished <b>'+esc(p.name)+'</b>! Pick the plant that will grow in your class garden. It starts as a sprout and grows over the next few days.</p>'+
+    '<div class="plant-choices" role="radiogroup" aria-label="Plants">'+DATA.plants.map(function(x){
+      return '<button type="button" class="plant-card" role="radio" aria-checked="false" data-act="pickplant" data-id="'+x.id+'">'+GARDEN.plantSVG(x.id,3,4)+'<b>'+esc(x.name)+'</b><span class="muted">'+esc(x.blurb)+'</span></button>';}).join("")+'</div>'+
+    '<div class="row" style="margin-top:14px"><button class="btn" id="doplant" data-act="doplant" disabled>Plant it in the garden</button><button class="btn btn-ghost" data-act="close">Later</button></div>');
 }
+function gardenPlants(list){   // the garden data -> what the scene draws
+  return list.map(function(g){return {species:g.species,stage:g.stage,you:!!g.you,
+    title:(g.who?g.who+" planted a ":"A ")+plantName(g.species).toLowerCase()+(g.project?" ("+g.project+")":"")+(g.cls?" in "+g.cls:"")};});
+}
+function gardenLegend(list){
+  var n={};list.forEach(function(g){n[g.species]=(n[g.species]||0)+1;});
+  var keys=Object.keys(n).sort(function(a,b){return n[b]-n[a];});
+  return keys.length?'<div class="legend garden-legend">'+keys.map(function(k){return '<span>'+GARDEN.plantSVG(k,3,1)+esc(plantName(k))+' × '+n[k]+'</span>';}).join("")+'</div>':'';
+}
+var STAGE_WORD={1:"sprout",2:"growing",3:"in bloom"};
 function stuGarden(){
   var cur=S.tab.garden==="school"?"school":"class";
-  var html=stuHeader()+tabs("garden",[["class","Class forest"],["school","School forest"]],cur);
+  var html=stuHeader()+plantPrompt()+tabs("garden",[["class","Class garden"],["school","School garden"]],cur);
   if(cur==="class"){
-    var cp=classPlants();
-    html+='<section class="card"><h2>'+esc(S.cls.name)+' forest</h2><p class="muted">One forest, '+cp.length+' plants. Every student who begins a project adds a plant, so the whole class is rewarded, not just the fastest.</p>'+forest(cp)+'</section>';
+    var mine=S.garden.filter(function(g){return g.you;}),people={};S.garden.forEach(function(g){people[g.who]=1;});
+    html+='<section class="card"><h2>'+esc(S.cls.name)+' garden</h2><p class="muted">'+
+      (S.garden.length?S.garden.length+' plant'+(S.garden.length===1?'':'s')+' from '+Object.keys(people).length+' classmates. Finish a project to choose a plant, and watch it grow. Your own plants have a gold arrow.':'Nothing is planted yet. Finish a project and choose the first plant for the garden!')+'</p>'+
+      GARDEN.scene(gardenPlants(S.garden),{emptyPlots:Math.max(0,S.roster.length*2-S.garden.length)})+gardenLegend(S.garden)+'</section>';
+    if(mine.length)html+='<section class="card"><h3>Your plants</h3><div class="mine">'+mine.map(function(g){return '<div class="mine-item">'+GARDEN.plantSVG(g.species,g.stage,3)+'<b>'+esc(plantName(g.species))+'</b><span class="muted">'+esc(g.project)+' · '+STAGE_WORD[g.stage]+'</span></div>';}).join("")+'</div></section>';
   }else{
-    var mine=classPlants(),all=mine.slice(),others=S.schoolClasses||[]; // other classes: one plant per student who has begun
-    others.forEach(function(c,ci){
-      for(var k=0;k<c.n;k++)all.push({name:c.name,stage:1+Math.floor(rnd(ci*50+k)*3),kind:KINDS[Math.floor(rnd(ci*90+k+4)*3)],color:FOREST_COLORS[Math.floor(rnd(ci*70+k+9)*4)]});
-    });
-    // mix the classes together so it reads as one forest
-    all.sort(function(a,b){return rnd(all.indexOf(a)*7+1)-rnd(all.indexOf(b)*7+1);});
-    html+='<section class="card"><h2>School forest</h2><p class="muted">Every class together: '+all.length+' plants.</p>'+forest(all)+
-      '<p class="muted" style="margin-top:12px">'+[esc(S.cls.name)+': '+mine.length+' plants'].concat(others.map(function(c){return esc(c.name)+': '+c.n+' plants';})).join(" · ")+'</p></section>';
+    var all=S.garden.concat(S.schoolGarden.map(function(g){return {species:g.species,stage:g.stage,cls:g.cls};}));
+    html+='<section class="card"><h2>School garden</h2><p class="muted">Every class together: '+all.length+' plants. Your own class is in the same garden, with the gold arrows.</p>'+GARDEN.scene(gardenPlants(all),{emptyPlots:6})+gardenLegend(all)+'</section>';
   }
   app.innerHTML=html;
 }
@@ -542,7 +520,7 @@ document.addEventListener("click",function(e){
   var el=e.target.closest("[data-act]");if(!el)return;
   var a=el.dataset.act,id=el.dataset.id,i=+el.dataset.i;
   if(a==="tab"){S.tab[el.dataset.key]=el.dataset.v;save();route();}
-  else if(a==="begin"){var bp=projById(id);if(lvl().n<bp.level){toast("Reach level "+bp.level+" first");return;}var first=S.progress[id]===undefined;S.tab.proj=id;api("POST","begin",{pid:id}).then(function(st){applyState(st);if(first)toast("Seed planted in your class garden!");if(location.hash==="#/student/project")route();else location.hash="#/student/project";}).catch(fail);}
+  else if(a==="begin"){var bp=projById(id);if(lvl().n<bp.level){toast("Reach level "+bp.level+" first");return;}var first=S.progress[id]===undefined;S.tab.proj=id;api("POST","begin",{pid:id}).then(function(st){applyState(st);if(first)toast("Project started! Finish it to choose a plant for the garden.");if(location.hash==="#/student/project")route();else location.hash="#/student/project";}).catch(fail);}
   else if(a==="step")openStep(id,i);
   else if(a==="finish")finishStep(id,i);
   else if(a==="close")closeModal();
@@ -550,6 +528,17 @@ document.addEventListener("click",function(e){
   else if(a==="buy")act(api("POST","buy",{id:id}));
   else if(a==="equip"){var ac2=DATA.accessories.filter(function(x){return x.id===id;})[0];act(api("POST","equip",{id:id,on:S.equipped[ac2.slot]!==id}));}
   else if(a==="review")act(api("POST","teacher/review",{id:id,v:el.dataset.v}));
+  else if(a==="chooseplant")choosePlant(id);
+  else if(a==="pickplant"){
+    if(!plantPick)return;plantPick.species=id;
+    [].forEach.call(document.querySelectorAll(".plant-card"),function(c){var on=c.dataset.id===id;c.classList.toggle("on",on);c.setAttribute("aria-checked",String(on));});
+    $("#doplant").disabled=false;
+  }
+  else if(a==="doplant"){
+    if(!plantPick||!plantPick.species)return;
+    var pk=plantPick;plantPick=null;
+    act(api("POST","plant",{pid:pk.pid,species:pk.species}),function(){toast("Planted! Your "+plantName(pk.species).toLowerCase()+" is now growing in the class garden.");location.hash="#/student/garden";});
+  }
   else if(a==="classcode"){
     modal('<h2>Change class code</h2><p>Students type this code to join your class. The old code stops working straight away, but students who have already joined keep their accounts and progress.</p>'+
       '<form id="ccform"><label for="ncc">New class code (6 to 40 letters, numbers or dashes)</label><br><input id="ncc" type="text" minlength="6" maxlength="40" autocomplete="off" required value="'+esc(T.cls.code)+'">'+

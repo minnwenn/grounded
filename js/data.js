@@ -108,6 +108,18 @@ var DATA = {
     {q:"CoffeeBot collects grounds from offices and sends them to schools. This is an example of…", o:["A circular economy loop", "A linear economy", "Greenwashing"], a:0, why:"Grounds that would have been thrown away become a material for projects and compost, so they stay useful instead of ending up in landfill."}
   ],
 
+  // The plants a student can choose from after finishing a project. The pictures are drawn in js/garden.js.
+  plants: [
+    {id:"sunflower",  name:"Sunflower",   blurb:"Tall and sunny. Its big golden head turns to follow the light."},
+    {id:"orchid",     name:"Orchid",      blurb:"Singapore's national flower is an orchid, the Vanda Miss Joaquim."},
+    {id:"hibiscus",   name:"Hibiscus",    blurb:"Big red flowers. In some places it is called the shoe flower, because it was used to polish shoes."},
+    {id:"chilli",     name:"Chilli padi", blurb:"A tiny chilli with a big kick, loved in Singapore cooking."},
+    {id:"pandan",     name:"Pandan",      blurb:"Fragrant leaves that flavour many local cakes and desserts."},
+    {id:"frangipani", name:"Frangipani",  blurb:"A small tree with sweet-smelling white and yellow flowers."},
+    {id:"tomato",     name:"Tomato",      blurb:"Watch its fruit change from green to red as it ripens."},
+    {id:"raintree",   name:"Rain tree",   blurb:"The big shady trees along many Singapore roads. Yours starts as a sapling."}
+  ],
+
   accessories: [
     {id:"cap",  name:"Cap",         slot:"head", how:"buy", cost:20},
     {id:"glasses", name:"Glasses",  slot:"face", how:"buy", cost:30},

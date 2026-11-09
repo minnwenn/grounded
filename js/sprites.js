@@ -167,60 +167,6 @@ function accSVG(id,px){
   return svg(BW,BH,inner,Math.max(2,Math.round((px||4)*0.58)),id);
 }
 
-/* Plants: stage 0 seed mound, 1 sprout, 2 leafy, 3 full */
-function plantSVG(kind,stage,color,px){
-  COL.p=color||"#BB758A";
-  var soil=[[1,9,"s"],[2,9,"s"],[3,9,"s"],[4,9,"s"],[5,9,"s"],[6,9,"s"],[7,9,"s"],[8,9,"s"],[2,8,"s"],[3,8,"s"],[4,8,"s"],[5,8,"s"],[6,8,"s"],[7,8,"s"]];
-  var st=[
-    [],
-    [[4,7,"v"],[4,6,"v"],[3,6,"v"],[5,5,"v"]],
-    [[4,7,"v"],[4,6,"v"],[4,5,"v"],[3,5,"v"],[2,4,"v"],[5,4,"v"],[6,3,"v"],[3,4,"v"],[5,5,"v"]],
-    [[4,7,"v"],[4,6,"v"],[4,5,"v"],[4,4,"v"],[3,5,"v"],[2,4,"v"],[5,5,"v"],[6,4,"v"],
-     [3,1,"p"],[4,1,"p"],[5,1,"p"],[3,2,"p"],[4,2,"g"],[5,2,"p"],[3,3,"p"],[4,3,"p"],[5,3,"p"]]
-  ][Math.max(0,Math.min(3,stage))];
-  return svg(10,10,rects(soil.concat(st),0,0),px||5,kind+" growth stage "+stage);
-}
-
-
-/* ---------- forest plants: 10 wide x 12 tall, base on the bottom row ---------- */
-COL.m="#6d7020";
-var FOREST_SPRITES={
-  tree:[
-    [],
-    ["....v.....","...vvv....","....s....."],
-    ["....mm....","...mvvm...","..mvvvvm..",".mvvvvvvm.","....ss...."],
-    ["....mm....","...mvvm...","...mvvm...","..mvvvvm..","..mvvvvm..",".mvvvvvvm.",".mvvvvvvm.","mvvvvvvvvm","....ss....","....ss...."]
-  ],
-  bush:[
-    [],
-    ["..........","...vvvv...","..vvvvvv.."],
-    ["..........",".mvvvvvm..","mvvpvvvvm.","mvvvvvpvvm"],
-    ["...vvvv...",".mvvvpvvm.","mvvpvvvvvm","mvvvvvpvvm","mvpvvvvvvm"]
-  ],
-  flower:[
-    [],
-    ["..........","....v.....","...vv....."],
-    ["....p.....","....v.....","..v.v.v...","...vvv....","....v....."],
-    ["...ppp....","...pgp....","...ppp....","....v.....","..v.v.v...","...vvv....","....v....."]
-  ]
-};
-/* returns SVG rect markup in a 10x12 box. Stage 0 is a bare soil mound. */
-function forestInner(kind,stage,color){
-  COL.p=color||"#BB758A";
-  var st=Math.max(0,Math.min(3,stage)),rows=st===0?["..........","...ssss...","..ssssss.."]:(FOREST_SPRITES[kind]||FOREST_SPRITES.flower)[st];
-  var out=[];
-  rows.forEach(function(row,i){
-    var y=12-rows.length+i;
-    for(var x=0;x<row.length;x++){var ch=row[x];if(ch!=="."&&COL[ch])out.push('<rect x="'+x+'" y="'+y+'" width="1" height="1" fill="'+COL[ch]+'"/>');}
-  });
-  return out.join("");
-}
-
-function forestHeight(kind,stage){
-  var st=Math.max(0,Math.min(3,stage));
-  return st===0?3:((FOREST_SPRITES[kind]||FOREST_SPRITES.flower)[st]||[]).length;
-}
-
 /* pixel camera icon for the photo step; takes its colour from the surrounding text */
 function cameraIcon(px){
   var rows=["....cccc....","cccccccccccc","ccccc..ccccc","cccc.cc.cccc","cccc.cc.cccc","ccccc..ccccc","cccccccccccc"],out="";

@@ -154,6 +154,7 @@ function seedDemo(db, D) {
     });
     // give every demo submission its sample image
     db.prepare("SELECT id, project_id FROM photo_submissions").all().forEach(r => { if (DEMO_PHOTOS[r.project_id]) run("INSERT OR IGNORE INTO photo_images(submission_id,jpeg) VALUES (?,?)", r.id, DEMO_PHOTOS[r.project_id]); });
+    require("./migrations").plantDemoGarden(db);          // the garden: a plant for most finished projects
     db.exec("COMMIT");
     return { teacher: firstTeacher };
   } catch (e) { db.exec("ROLLBACK"); throw e; }

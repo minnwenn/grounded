@@ -46,6 +46,15 @@ Passwords for staff need 8 or more characters; students need 6 or more. A teache
 - **Student:** class code `demosec-1D` with a name from that class, e.g. `Tan Hui Ling` or `Ng Jing Yi`.
 - **CoffeeBot:** `team@coffeebot.example`
 
+## The class garden
+
+When a student finishes a project and it is verified (the AI passed the photo, or the teacher approved it), they **choose a plant** for the class garden from eight: sunflower, orchid, hibiscus, chilli padi, pandan, frangipani, tomato and rain tree. The choice is saved in the `garden_plants` table, one plant per finished project, and it can't be changed afterwards.
+
+- A plant is a sprout on the day it is planted, is growing the next day, and is in bloom after 3 days. It follows the app's calendar, so `npm run demo:next-day` makes the garden grow.
+- The **class garden** shows every classmate's plants, with a gold arrow over the viewer's own. The **school garden** adds the other classes' plants (no names).
+- A project waiting for a teacher's approval can't be planted yet. Until a plant is chosen, the Path and Garden pages show a "Time to plant!" card.
+- The plant list and blurbs are in `plants` in `js/data.js`; the pictures and the scene are drawn in `js/garden.js`.
+
 ## Photo check
 
 Each final photo goes through three steps:
@@ -139,8 +148,9 @@ Notes:
 ## Files
 
 - `index.html`, `css/`, `js/` - the app (plain HTML, CSS and JavaScript)
-- `js/data.js` - projects, weeks, levels, quiz questions and demo seed data
+- `js/data.js` - projects, weeks, levels, quiz questions, the plants students can choose, and demo seed data
+- `js/garden.js` - the plant pictures and the garden scene
 - `server.js` - web server, the AI photo check, and the demo clock
 - `api.js` - the JSON API: logins, sessions, one route per action
-- `db/store.js` - the game rules and queries; `db/schema.sql` - the tables; `db/init.js` - create and seed; `db/admin.js` - create accounts; `db/auth.js` - password hashing; `db/clock.js` - the school-day clock
+- `db/store.js` - the game rules and queries; `db/schema.sql` - the tables; `db/init.js` - create and seed; `db/admin.js` - create accounts; `db/auth.js` - password hashing; `db/clock.js` - the school-day clock; `db/migrations.js` - one-off data fixes that run once when the server starts
 - `demo.js` - the terminal control for the demo clock
