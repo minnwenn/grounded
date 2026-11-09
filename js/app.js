@@ -299,8 +299,9 @@ var lastCheck=null;
  * - no API key on the server (demo mode): the on-device verdict stands */
 function photoPipeline(pid,data,onProgress){
   return clipCheck.check(projById(pid),data,onProgress).then(function(local){
-    var body={projectId:pid,local:{verdict:local.verdict,confidence:local.confidence,feedback:local.feedback}};
-    if(local.verdict!=="fail")body.image=data.split(",")[1];
+    // Always send the photo: if this try is the last one (too many fails), it goes to the teacher, who must be able to see it.
+    // The server only keeps a photo once it is submitted, so a photo that is simply rejected is thrown away.
+    var body={projectId:pid,image:data.split(",")[1],local:{verdict:local.verdict,confidence:local.confidence,feedback:local.feedback}};
     return api("POST","check",body);
   });
 }

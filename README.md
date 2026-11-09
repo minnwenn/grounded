@@ -50,7 +50,7 @@ Passwords for staff need 8 or more characters; students need 6 or more. A teache
 
 Each final photo goes through three steps:
 
-1. **Quick check on the device** (MobileCLIP-S0, `js/clip-check.js`). A clear mismatch stops here and counts as a failed try. Nothing is sent anywhere.
+1. **Quick check on the device** (MobileCLIP-S0, `js/clip-check.js`). A clear mismatch counts as a failed try and the AI is not asked. The photo is still sent to the server with the verdict, because after too many failed tries it goes to the teacher, who needs to see it; if it is simply rejected, the server throws it away.
 2. **AI check** (Claude, run by the server from `/api/check`, needs `ANTHROPIC_API_KEY`). Pass counts when the student presses Submit. Unsure goes to the teacher. Fail counts as a failed try.
 3. **Teacher review**, only for photos the AI is unsure about, or that are still failing after 3 retakes (4 tries in all, set by `aiRetakeLimit` in `js/dashboard-data.js`). Approve counts as verified. Redo sends the student back to the photo step.
 
