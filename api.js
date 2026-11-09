@@ -20,9 +20,15 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
   function limited(key, max, windowMs) {                      // sliding window, in memory
     const now = Date.now(), arr = (buckets.get(key) || []).filter(t => now - t < windowMs);
     arr.push(now); buckets.set(key, arr);
-    if (buckets.size > 5000) for (const [k, v] of buckets) if (!v.some(t => now - t < windowMs)) buckets.delete(k);
+    if (buckets.size > 5000) for (const [k, v] of buckets) if (!v.some(t => now - t < 10 * 60000)) buckets.delete(k);   // 10 min is the longest window in use
     return arr.length > max;
   }
+  /* Failed-login limits. A whole class shares one school IP address, so successful logins must never count:
+   * only wrong passwords do. One account is locked after 10 misses in 5 minutes; one IP after 100 misses in 10. */
+  const misses = (key, windowMs) => { const now = Date.now(), arr = (buckets.get(key) || []).filter(t => now - t < windowMs); buckets.set(key, arr); return arr.length; };
+  const recordMiss = key => { const arr = buckets.get(key) || []; arr.push(Date.now()); buckets.set(key, arr); };
+  const lockedOut = (idKey, ip) => misses("id:" + idKey, 5 * 60000) >= 10 || misses("ip:" + ip, 10 * 60000) >= 100;
+  const failLogin = (idKey, ip) => { recordMiss("id:" + idKey); recordMiss("ip:" + ip); };
   const json = (res, code, obj, headers = {}) => { res.writeHead(code, Object.assign({ "Content-Type": "application/json", "Cache-Control": "no-store" }, headers)); res.end(JSON.stringify(obj)); };
   const readBody = (req, max) => new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
@@ -73,8 +79,9 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
       r = { verdict: local.verdict, confidence: Math.max(0, Math.min(1, Number(local.confidence) || 0)), feedback: text(local.feedback, 300), stage: "local-only", mode: "demo" };
     }
     const out = store.recordCheck(sid, pid, r, retakes);
-    // Keep the JPEG with the pending check only when a teacher may need it; it is stored at Submit, and only if the verdict is "unsure".
-    const b64 = String(body.image || ""), image = out.verdict === "unsure" && /^\/9j\/[A-Za-z0-9+/=]+$/.test(b64) && b64.length * 0.75 <= 600 * 1024 ? Buffer.from(b64, "base64") : null;
+    // Every photo the student can submit (pass or unsure) is kept with the pending check and saved to the database at Submit,
+    // so the teacher can see it. A photo that fails the check is never submitted, so it is never kept.
+    const b64 = String(body.image || ""), image = out.verdict !== "fail" && /^\/9j\/[A-Za-z0-9+/=]+$/.test(b64) && b64.length * 0.75 <= 600 * 1024 ? Buffer.from(b64, "base64") : null;
     if (out.verdict !== "fail") checks.set(sid + ":" + pid, Object.assign({ ts: Date.now(), image }, out));
     else checks.delete(sid + ":" + pid);
     return out;
@@ -84,21 +91,23 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
   const stu = ctx => store.studentState(ctx.sid);
   const R = {
     "POST /api/login": async ({ body, req, res }) => {
-      if (limited("login:" + ipOf(req), 10, 5 * 60000)) throw new HttpError(429, "Too many tries. Wait a few minutes.");
-      const u = q1("SELECT id,role,password_hash FROM users WHERE email=?", text(body.email, 200));
+      const email = text(body.email, 200), idKey = "u:" + email.toLowerCase();
+      if (lockedOut(idKey, ipOf(req))) throw new HttpError(429, "Too many wrong tries. Wait a few minutes.");
+      const u = q1("SELECT id,role,password_hash FROM users WHERE email=?", email);
       const ok = u ? verifyPassword(String(body.password || ""), u.password_hash) : (verifyPassword("x", "scrypt$00$00"), false);
-      if (!ok || u.role !== body.role) throw new HttpError(401, "That email or password is not right.");
+      if (!ok || u.role !== body.role) { failLogin(idKey, ipOf(req)); throw new HttpError(401, "That email or password is not right."); }
       return { headers: startSession(res, "user", u.id), body: u.role === "teacher" ? store.teacherData(u.id) : { user: { role: "coffeebot", name: q1("SELECT name FROM users WHERE id=?", u.id).name } } };
     },
     "POST /api/student/login": async ({ body, req, res }) => {
-      if (limited("login:" + ipOf(req), 10, 5 * 60000)) throw new HttpError(429, "Too many tries. Wait a few minutes.");
-      const s = q1("SELECT s.id,s.password_hash FROM students s JOIN classes c ON c.id=s.class_id WHERE c.code=? AND s.name=?", text(body.code, 40), text(body.name, 30));
-      if (!(s ? verifyPassword(String(body.password || ""), s.password_hash) : (verifyPassword("x", "scrypt$00$00"), false))) throw new HttpError(401, "Check your class code, name and password.");
+      const code = text(body.code, 40), name = text(body.name, 30), idKey = "s:" + code.toLowerCase() + "|" + name.toLowerCase();
+      if (lockedOut(idKey, ipOf(req))) throw new HttpError(429, "Too many wrong tries. Wait a few minutes.");
+      const s = q1("SELECT s.id,s.password_hash FROM students s JOIN classes c ON c.id=s.class_id WHERE c.code=? AND s.name=?", code, name);
+      if (!(s ? verifyPassword(String(body.password || ""), s.password_hash) : (verifyPassword("x", "scrypt$00$00"), false))) { failLogin(idKey, ipOf(req)); throw new HttpError(401, "Check your class code, name and password."); }
       store.touch(s.id);
       return { headers: startSession(res, "student", s.id), body: store.studentState(s.id) };
     },
     "POST /api/student/signup": async ({ body, req, res }) => {
-      if (limited("signup:" + ipOf(req), 10, 10 * 60000)) throw new HttpError(429, "Too many tries. Wait a few minutes.");
+      if (limited("signup:" + ipOf(req), 120, 10 * 60000)) throw new HttpError(429, "Too many tries. Wait a few minutes.");   // generous: a class signs up from one school IP
       const name = text(body.name, 30), pw = String(body.password || "");
       const cls = q1("SELECT id FROM classes WHERE code=?", text(body.code, 40));
       if (!cls) throw new HttpError(404, "That class code was not found.");
@@ -143,13 +152,15 @@ function createApi({ db, store, hasAI, aiCheck, retakes, trustProxy, secureCooki
     /* teachers */
     "GET /api/teacher": async ctx => store.teacherData(needTeacher(ctx.session)),
     "GET /api/teacher/photo": async ({ session, res, url }) => {
-      const jpeg = store.reviewPhoto(needTeacher(session), text(url.searchParams.get("id"), 20));
+      const jpeg = store.classPhoto(needTeacher(session), text(url.searchParams.get("id"), 20));   // only photos from this teacher's own class
       if (!jpeg) throw new HttpError(404, "No photo stored");
-      res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "Content-Length": jpeg.length });
+      res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "Content-Length": jpeg.length,
+        "Content-Security-Policy": "default-src 'none'; sandbox", "X-Content-Type-Options": "nosniff" });
       res.end(jpeg);
       return RAW;
     },
     "POST /api/teacher/review": async ctx => { const t = needTeacher(ctx.session); store.review(t, text(ctx.body.id, 20), ctx.body.v === "ok" ? "ok" : "redo"); return store.teacherData(t); },
+    "POST /api/teacher/class-code": async ctx => { const t = needTeacher(ctx.session); store.setClassCode(t, ctx.body.code); return store.teacherData(t); },
     "POST /api/teacher/mission": async ctx => { const t = needTeacher(ctx.session); store.addMission(t, ctx.body.name, Number(ctx.body.goal)); return store.teacherData(t); },
     "POST /api/teacher/reset-password": async ctx => {
       const t = needTeacher(ctx.session), pw = String(ctx.body.password || "");

@@ -1,5 +1,5 @@
--- Grounded database (SQLite). Photos the AI verified are never stored. A photo a teacher has to review is kept
--- (photo_images) until they decide, then deleted.
+-- Grounded database (SQLite). Every photo a student submits is kept (photo_images) so their teacher can see it.
+-- Photos that fail the check are never submitted, so they are never kept.
 PRAGMA foreign_keys = ON;
 
 -- ---------- people and organisations ----------
@@ -136,7 +136,7 @@ CREATE TABLE photo_submissions (
 );
 CREATE INDEX idx_photos_pending ON photo_submissions(status) WHERE status = 'pending';
 
-CREATE TABLE IF NOT EXISTS photo_images (           -- only photos a teacher must review; deleted once they decide
+CREATE TABLE IF NOT EXISTS photo_images (           -- every submitted photo, shown only to the student's own teacher
   submission_id  INTEGER PRIMARY KEY REFERENCES photo_submissions(id) ON DELETE CASCADE,
   jpeg           BLOB NOT NULL,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))

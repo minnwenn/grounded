@@ -8,6 +8,7 @@ const { zodOutputFormat } = require("@anthropic-ai/sdk/helpers/zod");
 const { z } = require("zod");
 const { openDb, assertSchema, createDb, seedIfEmpty, syncContent, DEFAULT_FILE } = require("./db/init");
 const { createStore } = require("./db/store");
+const { runMigrations } = require("./db/migrations");
 const { createApi } = require("./api");
 
 const PORT = process.env.PORT || 3000;
@@ -100,6 +101,7 @@ const fresh = !fs.existsSync(DB_FILE);
 const db = fresh ? createDb(DB_FILE, { demo: process.env.SEED_DEMO === "1" }) : openDb(DB_FILE);
 assertSchema(db, DB_FILE);
 syncContent(db, DATA);
+runMigrations(db);                                       // one-off data fixes, applied once per database
 if (process.env.SEED_DEMO === "1" && seedIfEmpty(db, DATA)) console.log("Filled the empty database with the Singapore sample schools and students.");                                   // keep levels, projects, quiz in step with js/data.js
 if (fresh) console.log("Created a new database at " + DB_FILE + (process.env.SEED_DEMO === "1" ? " with demo data" : ". Add accounts with: node db/admin.js"));
 let RETAKES = 3;                                         // same rule the dashboard documents (aiRetakeLimit)

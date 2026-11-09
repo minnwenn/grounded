@@ -285,7 +285,7 @@ function openStep(pid,i){
   }else{
     modal('<h2>'+esc(s[0])+'</h2><p>'+esc(s[1])+'</p>'+
     '<p class="muted">The photo checker looks for: <b>'+esc(p.photoPrompt)+'</b></p><label for="photo">Choose or take a photo</label><br><input id="photo" data-pid="'+pid+'" type="file" accept="image/*" capture="environment">'+
-    '<div id="photoOut" class="muted" style="margin:10px 0">Show your finished project. Photos are compressed to under 400 kB and deleted after checking. If your teacher has to look at it, it is kept until they decide.</div>'+
+    '<div id="photoOut" class="muted" style="margin:10px 0">Show your finished project. Photos are compressed to under 400 kB. When you submit a photo, your teacher can see it. A photo that does not pass the check is not kept.</div>'+
     '<div class="row"><button id="submitPhoto" class="btn" disabled data-act="finish" data-id="'+pid+'" data-i="'+i+'">Submit</button><button class="btn btn-ghost" data-act="close">Cancel</button></div>');
     $("#photo").addEventListener("change",onPhoto);
     clipCheck.warm(); // start the one-time model download while the student reads the step
@@ -322,7 +322,7 @@ function onPhoto(e){
       lastCheck=r;
       var by=r.stage==="ai"?"checked by AI":r.stage==="local"?"quick check":r.stage==="ai-down"?"AI busy":"quick check only (AI unavailable)";
       var chip=r.verdict==="pass"?'<span class="chip ok">Looks right!</span>':r.verdict==="unsure"?'<span class="chip">Teacher will check</span>':'<span class="chip bad">Try another photo</span>';
-      out.innerHTML=chip+' <span class="muted">('+r.kb+' kB, '+by+')</span><p style="margin:8px 0 0">'+esc(r.feedback||"")+extra+'</p><p class="muted">Your photo is not kept after this check.</p>';
+      out.innerHTML=chip+' <span class="muted">('+r.kb+' kB, '+by+')</span><p style="margin:8px 0 0">'+esc(r.feedback||"")+extra+'</p><p class="muted">'+(r.verdict==="fail"?"This photo is not kept.":"If you submit it, your teacher will be able to see this photo.")+'</p>';
       btn.disabled=r.verdict==="fail";
     }).catch(function(e){out.textContent=e.message;if(e.status===401)fail(e);});
   };
@@ -443,7 +443,7 @@ function classRoster(){return (S.user&&S.user.role==="teacher"?(T&&T.roster):S.r
 var STAGE_RANK={none:0,started:1,sent:2,verified:3};
 var PIP={none:"not started",started:"started",sent:"photo sent",verified:"verified"};
 function teacherHead(title,sub){
-  return '<div class="dash-head"><div><h1 class="dash-title">'+esc(title)+'</h1>'+(sub?'<p class="muted">'+sub+'</p>':'')+'</div><div class="row"><span class="chip">Class code: <b>'+esc(T.cls.code)+'</b></span></div></div>';
+  return '<div class="dash-head"><div><h1 class="dash-title">'+esc(title)+'</h1>'+(sub?'<p class="muted">'+sub+'</p>':'')+'</div><div class="row"><span class="chip">Class code: <b>'+esc(T.cls.code)+'</b></span><button type="button" class="btn small btn-ghost" data-act="classcode">Change code</button></div></div>';
 }
 function noClass(){
   if(T&&T.cls)return false;
@@ -498,14 +498,22 @@ function schOverview(){
 function schPhotos(){
   if(noClass())return;
   var f=allFlags(),open=f.filter(function(x){return !x.reviewed;}),done=f.filter(function(x){return x.reviewed;});
+  var img=function(x,cls){return '<a href="/api/teacher/photo?id='+esc(x.id)+'" target="_blank" rel="noopener"><img class="'+cls+'" alt="Photo submitted by '+esc(x.student)+' for '+esc(x.project)+'" src="/api/teacher/photo?id='+esc(x.id)+'" loading="lazy"></a>';};
   var card=function(x){var r=x.reviewed;
     return '<div class="card review-card"><div class="row between"><div><b class="keepcase">'+esc(x.student)+'</b> · '+esc(x.project)+'<br><span class="chip reason">'+esc(x.note)+'</span>'+
-    (r?'':x.hasPhoto?'<br><a href="/api/teacher/photo?id='+esc(x.id)+'" target="_blank" rel="noopener"><img class="review-photo" alt="Photo submitted by '+esc(x.student)+' for '+esc(x.project)+'" src="/api/teacher/photo?id='+esc(x.id)+'" loading="lazy"></a>':'<br><span class="muted">No photo was kept for this one (sample data, or it was submitted before photos were stored).</span>')+'</div>'+
+    (x.hasPhoto?'<br>'+img(x,"review-photo"):'<br><span class="muted">No photo was kept for this one (it was submitted before photos were stored).</span>')+'</div>'+
     (r?'<span class="chip '+(r==="ok"?"ok":"bad")+'">'+(r==="ok"?"✓ approved, counts as verified":"↺ sent back to redo")+'</span>':
     '<div class="row"><button class="btn small" data-act="review" data-id="'+x.id+'" data-v="ok">Approve</button><button class="btn small btn-ghost" data-act="review" data-id="'+x.id+'" data-v="redo">Ask to redo</button></div>')+'</div></div>';};
-  app.innerHTML=teacherHead("Photos to review","Only photos the AI couldn't verify come here: ones it was unsure about, or that still failed after 3 retakes. Approving counts the project as verified. Redo sends the student back to the photo step. The photo is deleted as soon as you decide.")+
-  '<div class="stack">'+(open.length?open.map(card).join(""):'<section class="card"><p>Nothing waiting. The AI has verified every photo so far.</p></section>')+
-  (done.length?'<h3 style="margin-top:20px">Reviewed</h3>'+done.map(card).join(""):'')+'</div>';
+  var VERDICT={pass:"AI passed",unsure:"AI unsure",fail:"AI failed"};
+  var gallery=(T.photos||[]);
+  var tiles=gallery.length?'<div class="photo-grid">'+gallery.map(function(x){
+    var chip=x.status==="pending"?'<span class="chip">waiting for you</span>':x.status==="redo"?'<span class="chip bad">sent back</span>':'<span class="chip ok">'+(x.verdict==="pass"?VERDICT.pass:"approved")+'</span>';
+    return '<figure class="photo-tile">'+img(x,"tile-photo")+'<figcaption><b class="keepcase">'+esc(x.student)+'</b><span class="muted">'+esc(x.project)+' · '+esc(x.date)+'</span>'+chip+'</figcaption></figure>';}).join("")+'</div>':
+    '<p class="muted">No photos yet. Photos appear here as soon as a student submits one.</p>';
+  app.innerHTML=teacherHead("Photos","Every photo your students submit is kept here for you to see. Ones the AI couldn't verify are listed first: approving counts the project as verified, and redo sends the student back to the photo step.")+
+  '<div class="stack"><h3 style="margin:4px 0 0">To review</h3>'+(open.length?open.map(card).join(""):'<section class="card"><p>Nothing waiting. The AI has verified every photo so far.</p></section>')+
+  (done.length?'<h3 style="margin-top:20px">Reviewed</h3>'+done.map(card).join(""):'')+
+  '<h3 style="margin-top:20px">All submitted photos ('+gallery.length+')</h3><section class="card">'+tiles+'</section></div>';
 }
 function schMissions(){
   if(noClass())return;
@@ -541,6 +549,13 @@ document.addEventListener("click",function(e){
   else if(a==="buy")act(api("POST","buy",{id:id}));
   else if(a==="equip"){var ac2=DATA.accessories.filter(function(x){return x.id===id;})[0];act(api("POST","equip",{id:id,on:S.equipped[ac2.slot]!==id}));}
   else if(a==="review")act(api("POST","teacher/review",{id:id,v:el.dataset.v}));
+  else if(a==="classcode"){
+    modal('<h2>Change class code</h2><p>Students type this code to join your class. The old code stops working straight away, but students who have already joined keep their accounts and progress.</p>'+
+      '<form id="ccform"><label for="ncc">New class code (6 to 40 letters, numbers or dashes)</label><br><input id="ncc" type="text" minlength="6" maxlength="40" autocomplete="off" required value="'+esc(T.cls.code)+'">'+
+      '<p class="muted" style="margin:8px 0 0">Anyone who knows the code can join as a new student, so avoid easy guesses for a real class.</p>'+
+      '<div class="row" style="margin-top:12px"><button class="btn">Save</button><button type="button" class="btn btn-ghost" data-act="close">Cancel</button></div></form>');
+    $("#ccform").addEventListener("submit",function(ev){ev.preventDefault();var c=$("#ncc").value.trim();act(api("POST","teacher/class-code",{code:c}),function(){toast("Class code is now "+c);});});
+  }
   else if(a==="resetpw"){
     var nm=el.dataset.name;
     modal('<h2>Reset password</h2><p>Choose a new password for <b class="keepcase">'+esc(nm)+'</b>. They will be logged out and can log in with it right away. Tell them the new password in person.</p>'+

@@ -6,6 +6,8 @@ const fs = require("fs"), path = require("path"), vm = require("vm");
 const { hashPassword } = require("./auth");
 const { realDay, dayToDate } = require("./clock");
 
+const DEMO_PHOTOS = {};   // project id -> placeholder JPEG (db/demo-photos/<id>.jpg), so the teacher's gallery is not empty in the demo
+try { fs.readdirSync(path.join(__dirname, "demo-photos")).forEach(f => { DEMO_PHOTOS[f.replace(/\.jpg$/, "")] = fs.readFileSync(path.join(__dirname, "demo-photos", f)); }); } catch (e) {}
 const loadDash = () => vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../js/dashboard-data.js"), "utf8") + ";DASH", { localStorage: { getItem() { return null; } } });
 
 function rng(seed) {   // mulberry32
@@ -72,9 +74,10 @@ function seedDemo(db, D) {
       const startDay = today - 48 + DASH.cohortStartWeek(sid) * 7;   // cohort A started about 7 weeks ago, cohort B about 4
       classes.forEach((c, ci) => {
         const [tname, local] = TEACHERS[teacherNo++ % TEACHERS.length];
-        const teacher = id(run("INSERT INTO users(role,name,email,password_hash,school_id) VALUES ('teacher',?,?,?,?)", tname, local + "@" + domain + ".example", pw, school[sid]));
-        if (!firstTeacher) firstTeacher = local + "@" + domain + ".example";
-        const code = sid === "s1" && ci === 0 ? "RIMB-1A7K" : abbr + "-" + c.name.replace("Sec ", "") + Array.from({ length: 2 }, () => alphabet[Math.floor(r() * alphabet.length)]).join("");
+        const email = sid === "s1" && ci === 0 ? "teacher_demo@demo.edu.sg" : local + "@" + domain + ".example";   // the main demo teacher has a short, memorable login
+        const teacher = id(run("INSERT INTO users(role,name,email,password_hash,school_id) VALUES ('teacher',?,?,?,?)", tname, email, pw, school[sid]));
+        if (!firstTeacher) firstTeacher = email;
+        const code = sid === "s1" && ci === 0 ? "demosec-1D" : abbr + "-" + c.name.replace("Sec ", "") + Array.from({ length: 2 }, () => alphabet[Math.floor(r() * alphabet.length)]).join("");
         const cls = id(run("INSERT INTO classes(school_id,teacher_id,name,code) VALUES (?,?,?,?)", school[sid], teacher, c.name, code));
 
         const used = new Set(); let steps = 0, verifiedCount = 0, pendingLeft = (ci === 0 ? dash.waiting.length + (sid === "s1" ? 1 : 0) : 0), approvedByTeacher = sid === "s1" && ci === 0;
@@ -149,6 +152,8 @@ function seedDemo(db, D) {
       run("INSERT INTO batches VALUES (?,?,?,?,?,?)", b.id, school[b.school], cohort[b.cohort], b.outlet, b.kg, b.events.some(e => e[2] === "wait") ? 0 : 1);
       b.events.forEach(e => run("INSERT INTO batch_events(batch_id,happened,text,done) VALUES (?,?,?,?)", b.id, e[0] === "pending" ? null : e[0], e[1], e[2] === "ok" ? 1 : 0));
     });
+    // give every demo submission its sample image
+    db.prepare("SELECT id, project_id FROM photo_submissions").all().forEach(r => { if (DEMO_PHOTOS[r.project_id]) run("INSERT OR IGNORE INTO photo_images(submission_id,jpeg) VALUES (?,?)", r.id, DEMO_PHOTOS[r.project_id]); });
     db.exec("COMMIT");
     return { teacher: firstTeacher };
   } catch (e) { db.exec("ROLLBACK"); throw e; }

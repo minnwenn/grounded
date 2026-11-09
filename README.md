@@ -42,8 +42,8 @@ Passwords for staff need 8 or more characters; students need 6 or more. A teache
 
 `npm run db:demo` (or `SEED_DEMO=1` on first start) fills the database with four invented secondary schools (Sungei Rimba, Pelita Hills, Bukit Teratai, Tanjong Merlin: not real schools), 11 classes with a teacher each, about 265 students with local names, and seven weeks of progress, photos, quiz answers and purchases. Class sizes and progress match the CoffeeBot dashboards. Never use it on a live school database. Every password is `demo`.
 
-- **Teacher:** `lim_hui_ling@sungeirimba.example` (Sec 1A, Sungei Rimba, 2 photos waiting for review). Other teachers: `node db/admin.js list`.
-- **Student:** class code `RIMB-1A7K` with a name from that class, e.g. `Tan Hui Ling` or `Ng Jing Yi`.
+- **Teacher:** `teacher_demo@demo.edu.sg` (Sec 1A, Sungei Rimba, 2 photos waiting for review). Other teachers: `node db/admin.js list`.
+- **Student:** class code `demosec-1D` with a name from that class, e.g. `Tan Hui Ling` or `Ng Jing Yi`.
 - **CoffeeBot:** `team@coffeebot.example`
 
 ## Photo check
@@ -87,6 +87,19 @@ Notes:
 - If you started the server on another port, run commands with `PORT=4000 node demo.js status`.
 - On a deployed server the clock stays at the real date: the commands are refused from anywhere but the server itself.
 
+## Points and beans
+
+Students earn two separate things. Both are kept in the same ledger, but they do different jobs.
+
+| | Points | Beans |
+|---|---|---|
+| Purpose | Measure progress | Spendable currency |
+| Earned by | Finishing a project with a verified final photo (or teacher approval if the photo check fails) | +5 per project step, +10 per verified project photo, +5 for a correct quiz answer, +1 for a wrong one |
+| Used for | Setting the student's level, which unlocks new projects | Buying accessories for the buddy in the Wardrobe |
+| Spent? | Never | Yes (a negative ledger entry) |
+
+Beans buy accessories, never progress, so a student can't spend their way past the learning. Some accessories can't be bought and unlock through streaks, projects or class missions instead.
+
 ## Database
 
 SQLite, through Node's built-in `node:sqlite` (nothing to install). The server owns it: the browser never touches it, and every rule (points, steps, quiz, shop, photo review) is enforced in `db/store.js`.
@@ -100,7 +113,8 @@ What is stored: accounts, classes, students, project progress, photo results, po
 
 Design notes:
 - **Points and beans are a ledger** (`ledger` table) and balances are sums, so every change can be traced. The `student_levels` view gives each student's points, beans and level.
-- **Photos are stored only when a teacher has to review them.** Photos the AI verifies are discarded. A photo that goes to the teacher is kept in `photo_images` (JPEG, under 600 kB), shown only to that class's teacher, and deleted the moment they approve or ask for a redo. `photo_submissions` keeps the AI verdict, confidence, feedback, why it went to a teacher, and the teacher's decision.
+- **Every submitted photo is stored, and only the student's own teacher can see it.** When a student submits a photo (AI pass or "unsure"), the JPEG (compressed to under 400 kB) is saved in `photo_images`. A photo that fails the check is never submitted, so it is never kept. The teacher sees them on the Photos page (to-review list first, then all photos). Nobody else can open them: the image route checks that the photo belongs to that teacher's class, and students are told their teacher can see what they submit. Deleting a student deletes their photos. `photo_submissions` keeps the AI verdict, confidence, feedback, why it went to a teacher, and the teacher's decision.
+- **Storage grows with use:** about 0.2 to 0.4 MB per photo, so 25 students doing four projects is roughly 30 MB per class. Make sure the Railway volume is large enough, and back it up. These are photos of children, so check your school's or CoffeeBot's data-protection policy (in Singapore, the PDPA) and tell parents and students photos are kept.
 - **Passwords** (students, teachers, CoffeeBot) are hashed with scrypt (`db/auth.js`). Login sessions are a random cookie token; only its hash is in the database.
 - **Photo check:** the browser's on-device check runs first, then the server asks Claude. If the AI is unavailable the photo goes to the teacher instead of passing. With no `ANTHROPIC_API_KEY` (demo mode) the on-device verdict stands, which a student could fake: always set the key in production.
 - Mood and streaks are worked out from the dates in `quiz_answers`.

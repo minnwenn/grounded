@@ -82,15 +82,18 @@ function createStore(db, D, opts = {}) {
     const u = q1("SELECT id,name FROM users WHERE id=? AND role='teacher'", userId);
     const c = q1("SELECT c.id,c.name,c.code,sc.name school FROM classes c JOIN schools sc ON sc.id=c.school_id WHERE c.teacher_id=? ORDER BY c.id LIMIT 1", userId);
     const base = { user: { role: "teacher", name: u.name }, today: today(), evening: !!demo().evening, token: demo().token || "", demoDay: demo().day };
-    if (!c) return Object.assign(base, { cls: null, roster: [], flags: [], missions: [], quiz7: [0, 0, 0, 0, 0, 0, 0] });
+    if (!c) return Object.assign(base, { cls: null, roster: [], flags: [], photos: [], missions: [], quiz7: [0, 0, 0, 0, 0, 0, 0] });
     const flag = r => ({ id: "f" + r.id, student: r.student, project: PROJECTS[r.project_id].name, pid: r.project_id, pts: PROJECTS[r.project_id].pts, note: r.note || "Needs a teacher's look", status: r.status, hasPhoto: !!r.has_photo, reviewed: r.reviewed_by ? (r.status === "approved" ? "ok" : "redo") : null });
     const flags = qa("SELECT ps.id,ps.project_id,ps.note,ps.status,ps.reviewed_by,s.name student,EXISTS(SELECT 1 FROM photo_images i WHERE i.submission_id=ps.id) has_photo FROM photo_submissions ps JOIN students s ON s.id=ps.student_id WHERE s.class_id=? AND (ps.status='pending' OR ps.reviewed_by IS NOT NULL) ORDER BY ps.id DESC", c.id).map(flag);
+    // every photo the class has submitted, newest first (the images themselves load one by one from /api/teacher/photo)
+    const photos = qa("SELECT ps.id,ps.project_id,ps.verdict,ps.status,substr(ps.created_at,1,10) date,s.name student FROM photo_submissions ps JOIN students s ON s.id=ps.student_id WHERE s.class_id=? AND EXISTS (SELECT 1 FROM photo_images i WHERE i.submission_id=ps.id) ORDER BY ps.id DESC LIMIT 300", c.id)
+      .map(r => ({ id: "f" + r.id, student: r.student, project: PROJECTS[r.project_id].name, pid: r.project_id, verdict: r.verdict, status: r.status, date: r.date }));
     const quiz7 = [];
     for (let k = 6; k >= 0; k--) {
       const r = q1("SELECT COUNT(*) n, COALESCE(SUM(correct),0) ok FROM quiz_answers WHERE quiz_date=? AND student_id IN (SELECT id FROM students WHERE class_id=?)", dayToDate(today() - k), c.id);
       quiz7.push(r.n ? Math.round(r.ok / r.n * 100) : 0);
     }
-    return Object.assign(base, { cls: { id: c.id, name: c.name, code: c.code, school: c.school }, roster: roster(c.id), flags, missions: missions(c.id), quiz7 });
+    return Object.assign(base, { cls: { id: c.id, name: c.name, code: c.code, school: c.school }, roster: roster(c.id), flags, photos, missions: missions(c.id), quiz7 });
   }
 
   /* ----- student actions ----- */
@@ -132,7 +135,7 @@ function createStore(db, D, opts = {}) {
       const note = !unsure ? null : r.reason === "retakes" ? "Failed the photo check " + sp.fails + " times" : r.stage === "ai" ? "AI unsure (confidence " + (+r.confidence || 0).toFixed(2) + ")" : r.stage === "ai-down" ? "AI check was unavailable" : "Quick check unsure, AI unavailable";
       const sub = run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,note,mode,status) VALUES (?,?,?,?,?,?,?,?)",
         sid, pid, r.verdict, r.confidence ?? null, String(r.feedback || "").slice(0, 300), note, r.mode === "ai" ? "ai" : "demo", unsure ? "pending" : "approved");
-      if (unsure && image) run("INSERT INTO photo_images(submission_id,jpeg) VALUES (?,?)", Number(sub.lastInsertRowid), image);   // kept only until the teacher decides
+      if (image) run("INSERT INTO photo_images(submission_id,jpeg) VALUES (?,?)", Number(sub.lastInsertRowid), image);   // every submitted photo is kept for the teacher
       if (!unsure) ledger(sid, "points", p.pts, "photo_verified", pid);
     });
     touch(sid);
@@ -186,7 +189,6 @@ function createStore(db, D, opts = {}) {
     const r = q1("SELECT ps.id,ps.student_id,ps.project_id,ps.status FROM photo_submissions ps JOIN students s ON s.id=ps.student_id WHERE ps.id=? AND s.class_id=?", id, cid);
     if (!r || r.status !== "pending") bad("That photo is not waiting for review", 404);
     tx(() => {
-      run("DELETE FROM photo_images WHERE submission_id=?", id);
       if (verdict === "ok") {
         run("UPDATE photo_submissions SET status='approved', reviewed_by=?, reviewed_at=datetime('now') WHERE id=?", userId, id);
         ledger(r.student_id, "points", PROJECTS[r.project_id].pts, "teacher_approved", r.project_id);
@@ -196,11 +198,19 @@ function createStore(db, D, opts = {}) {
       }
     });
   }
-  /* The stored photo for a flag, only while it is still waiting and only for the teacher whose class it belongs to. */
-  function reviewPhoto(userId, flagId) {
+  /* A stored photo, for any submission (waiting or already decided), and only for the teacher whose class it belongs to. */
+  function classPhoto(userId, flagId) {
     const id = Number(String(flagId).replace(/^f/, "")), cid = teacherClassId(userId);
-    const r = q1("SELECT i.jpeg FROM photo_images i JOIN photo_submissions ps ON ps.id=i.submission_id JOIN students s ON s.id=ps.student_id WHERE ps.id=? AND ps.status='pending' AND s.class_id=?", id, cid);
+    const r = q1("SELECT i.jpeg FROM photo_images i JOIN photo_submissions ps ON ps.id=i.submission_id JOIN students s ON s.id=ps.student_id WHERE ps.id=? AND s.class_id=?", id, cid);
     return r ? Buffer.from(r.jpeg) : null;
+  }
+  /* A teacher renames their own class's join code. Students keep their accounts; the old code stops working at once. */
+  function setClassCode(userId, code) {
+    code = String(code || "").trim();
+    if (!/^[A-Za-z0-9-]{6,40}$/.test(code)) bad("Use 6 to 40 letters, numbers or dashes (no spaces).");
+    const cid = teacherClassId(userId);
+    if (q1("SELECT 1 FROM classes WHERE code=? AND id<>?", code, cid)) bad("Another class already uses that code. Try a different one.", 409);
+    run("UPDATE classes SET code=? WHERE id=?", code, cid);
   }
   function addMission(userId, name, goal) {
     name = String(name || "").trim().slice(0, 60);
@@ -211,7 +221,7 @@ function createStore(db, D, opts = {}) {
     return q1("SELECT s.id FROM students s WHERE s.id=? AND s.class_id=?", studentId, teacherClassId(userId)) || bad("No such student in your class", 404);
   }
 
-  return { HttpError, today, level, studentState, teacherData, begin, step, recordCheck, submit, answerQuiz, buy, equip, review, reviewPhoto, addMission, studentInTeacherClass, touch, q1, qa, run };
+  return { HttpError, today, level, studentState, teacherData, begin, step, recordCheck, submit, answerQuiz, buy, equip, review, classPhoto, setClassCode, addMission, studentInTeacherClass, touch, q1, qa, run };
 }
 
 module.exports = { createStore, HttpError };

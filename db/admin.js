@@ -5,6 +5,8 @@
  *   node db/admin.js school     <cohort> <school name>                      -> prints the school id
  *   node db/admin.js teacher    <email> <name> <password> <school id>
  *   node db/admin.js class      <school id> <teacher email> <class name>    -> prints the class code
+ *   node db/admin.js email      <old email> <new email>                      -> changes a teacher's or staff member's login email
+ *   node db/admin.js code       <old code> <new code>                       -> renames a class code (letters, numbers, dashes)
  *   node db/admin.js list
  *
  * On Railway, run it in the service shell, e.g.  node db/admin.js teacher a@school.sg "Ms Tan" 'a-long-password' 1
@@ -46,6 +48,26 @@ if (cmd === "coffeebot") {
   const code = part() + "-" + part();
   db.prepare("INSERT INTO classes(school_id,teacher_id,name,code) VALUES (?,?,?,?)").run(Number(a[0]), t.id, a[2], code);
   console.log("Class created. Students join with the class code: " + code);
+} else if (cmd === "email") {
+  need(2);
+  const [oldEmail, newEmail] = a;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) || newEmail.length > 200) die("That does not look like an email address.");
+  const u = db.prepare("SELECT id,name,role FROM users WHERE email=?").get(oldEmail);
+  if (!u) die("No account uses the email " + oldEmail);
+  const clash = db.prepare("SELECT id FROM users WHERE email=? AND id<>?").get(newEmail, u.id);
+  if (clash) die(newEmail + " is already used by another account.");
+  db.prepare("UPDATE users SET email=? WHERE id=?").run(newEmail, u.id);
+  console.log(u.name + " (" + u.role + ") now logs in with " + newEmail + ". Their password and class are unchanged.");
+} else if (cmd === "code") {
+  need(2);
+  const [oldCode, newCode] = a;
+  if (!/^[A-Za-z0-9-]{3,40}$/.test(newCode)) die("A class code can use letters, numbers and dashes only, 3 to 40 characters.");
+  const cls = db.prepare("SELECT id,name FROM classes WHERE code=?").get(oldCode);
+  if (!cls) die("No class has the code " + oldCode);
+  const clash = db.prepare("SELECT id FROM classes WHERE code=? AND id<>?").get(newCode, cls.id);
+  if (clash) die(newCode + " is already used by another class.");
+  db.prepare("UPDATE classes SET code=? WHERE id=?").run(newCode, cls.id);
+  console.log("Class " + cls.name + " now uses the code " + newCode + " (the old code " + oldCode + " no longer works). Students keep their accounts.");
 } else if (cmd === "list") {
   console.log("users:"); db.prepare("SELECT id,role,email,name,school_id FROM users").all().forEach(r => console.log("  ", JSON.stringify(r)));
   console.log("schools:"); db.prepare("SELECT id,name FROM schools").all().forEach(r => console.log("  ", JSON.stringify(r)));

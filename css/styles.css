@@ -271,3 +271,7 @@ tr.you td{font-weight:700;background:rgba(244,206,91,.35)}
 .keepcase{text-transform:none}
 
 .review-photo{display:block;margin-top:10px;max-width:280px;width:100%;max-height:280px;object-fit:cover;border-radius:12px;border:1px solid var(--line,#ddd)}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.photo-tile{margin:0;display:flex;flex-direction:column;gap:6px}
+.tile-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;border:2px solid var(--wine,#721F1F);background:#f3e4b8}
+.photo-tile figcaption{display:flex;flex-direction:column;gap:2px;font-size:.85rem;align-items:flex-start}

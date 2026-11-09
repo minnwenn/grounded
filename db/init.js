@@ -38,7 +38,7 @@ const tx = (db, fn) => { db.exec("BEGIN"); try { const r = fn(); db.exec("COMMIT
 /* Upserts levels, projects, weeks, accessories and the quiz bank from js/data.js. Safe to run on every start:
  * rows are updated in place, so student progress that points at them is never touched. */
 function syncContent(db, D = loadData()) {
-  db.exec(`CREATE TABLE IF NOT EXISTS photo_images (           -- only photos a teacher must review; deleted once they decide
+  db.exec(`CREATE TABLE IF NOT EXISTS photo_images (           -- every submitted photo, shown only to the student's own teacher
   submission_id  INTEGER PRIMARY KEY REFERENCES photo_submissions(id) ON DELETE CASCADE,
   jpeg           BLOB NOT NULL,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
