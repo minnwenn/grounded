@@ -6,7 +6,7 @@ const http = require("http"), fs = require("fs"), path = require("path"), vm = r
 const Anthropic = require("@anthropic-ai/sdk");
 const { zodOutputFormat } = require("@anthropic-ai/sdk/helpers/zod");
 const { z } = require("zod");
-const { openDb, assertSchema, createDb, seedIfEmpty, syncContent, DEFAULT_FILE } = require("./db/init");
+const { openDb, assertSchema, createDb, seedIfEmpty, ensureDemoAccounts, syncContent, DEFAULT_FILE } = require("./db/init");
 const { createStore } = require("./db/store");
 const { runMigrations } = require("./db/migrations");
 const { createApi } = require("./api");
@@ -103,6 +103,7 @@ assertSchema(db, DB_FILE);
 syncContent(db, DATA);
 runMigrations(db);                                       // one-off data fixes, applied once per database
 if (process.env.SEED_DEMO === "1" && seedIfEmpty(db, DATA)) console.log("Filled the empty database with the Singapore sample schools and students.");                                   // keep levels, projects, quiz in step with js/data.js
+if (process.env.DEMO_ACCOUNTS !== "0") ensureDemoAccounts(db);   // fixed demo logins (password "demo"); set DEMO_ACCOUNTS=0 to switch off
 if (fresh) console.log("Created a new database at " + DB_FILE + (process.env.SEED_DEMO === "1" ? " with demo data" : ". Add accounts with: node db/admin.js"));
 let RETAKES = 3;                                         // same rule the dashboard documents (aiRetakeLimit)
 try { RETAKES = vm.runInNewContext(fs.readFileSync(path.join(ROOT, "js/dashboard-data.js"), "utf8") + ";DASH.CONFIG.aiRetakeLimit", { localStorage: { getItem() { return null; } } }) || 3; } catch (e) {}

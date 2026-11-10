@@ -75,6 +75,34 @@ function seedIfEmpty(db, D = loadData()) {
   return true;
 }
 
+/* Fixed demo logins, all with the password "demo". Idempotent: each piece is only created if missing, and existing
+ * accounts are never changed, so it is safe to run on every start. Turn off with DEMO_ACCOUNTS=0. */
+function ensureDemoAccounts(db) {
+  const one = (sql, ...a) => db.prepare(sql).get(...a), run = (sql, ...a) => db.prepare(sql).run(...a);
+  const pw = hashPassword("demo");
+  tx(db, () => {
+    if (!one("SELECT 1 FROM users WHERE email='demo@coffeebot.com'"))
+      run("INSERT INTO users(role,name,email,password_hash) VALUES ('coffeebot','Demo CoffeeBot','demo@coffeebot.com',?)", pw);
+    let teacher = one("SELECT id,school_id FROM users WHERE email='demo@demo.com'");
+    if (!teacher) {
+      run("INSERT OR IGNORE INTO cohorts(name) VALUES ('Demo')");
+      const cohort = one("SELECT id FROM cohorts WHERE name='Demo'").id;
+      const school = Number(run("INSERT INTO schools(name,cohort_id) VALUES ('Demo School',?)", cohort).lastInsertRowid);
+      run("INSERT INTO users(role,name,email,password_hash,school_id) VALUES ('teacher','Demo Teacher','demo@demo.com',?,?)", pw, school);
+      teacher = one("SELECT id,school_id FROM users WHERE email='demo@demo.com'");
+    }
+    let cls = one("SELECT id FROM classes WHERE code='demo'");
+    if (!cls) {
+      run("INSERT INTO classes(school_id,teacher_id,name,code) VALUES (?,?,'Demo Class','demo')", teacher.school_id, teacher.id);
+      cls = one("SELECT id FROM classes WHERE code='demo'");
+    }
+    if (!one("SELECT 1 FROM students WHERE class_id=? AND name='demo'", cls.id)) {
+      const sid = Number(run("INSERT INTO students(class_id,name,password_hash) VALUES (?,'demo',?)", cls.id, pw).lastInsertRowid);
+      run("INSERT INTO buddies VALUES (?,0)", sid);
+    }
+  });
+}
+
 function createDb(file = DEFAULT_FILE, { demo = false } = {}) {
   const db = openDb(file);
   db.exec(fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8"));
@@ -83,7 +111,7 @@ function createDb(file = DEFAULT_FILE, { demo = false } = {}) {
   return db;
 }
 
-module.exports = { openDb, assertSchema, createDb, seedIfEmpty, syncContent, DEFAULT_FILE, loadData };
+module.exports = { openDb, assertSchema, createDb, seedIfEmpty, ensureDemoAccounts, syncContent, DEFAULT_FILE, loadData };
 
 if (require.main === module) {
   const file = DEFAULT_FILE, demo = process.argv.includes("--demo");
