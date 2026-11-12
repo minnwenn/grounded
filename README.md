@@ -63,7 +63,7 @@ Each final photo goes through three steps:
 2. **AI check** (Claude, run by the server from `/api/check`, needs `ANTHROPIC_API_KEY`). Pass counts when the student presses Submit. Unsure goes to the teacher. Fail counts as a failed try.
 3. **Teacher review**, only for photos the AI is unsure about, or that are still failing after 3 retakes (4 tries in all, set by `aiRetakeLimit` in `js/dashboard-data.js`). Approve counts as verified. Redo sends the student back to the photo step.
 
-**AI check details** (`check()` in `server.js`):
+**AI check details** (`check()` in `handler.js`):
 
 - **Model:** `claude-haiku-5-5` by default; set `CHECK_MODEL` in `.env` to change it. Runs at `effort: "low"` with a 25 second timeout and one retry.
 - **System prompt:**
@@ -91,10 +91,9 @@ There are no demo buttons in the app. The demo clock is driven from a second ter
 | `node demo.js status` | Shows the current demo day and time of day. |
 
 Notes:
-- Commands only work from the machine running the server (localhost). Requests from other machines are refused.
-- The demo day is saved in `.demo-state.json` (git-ignored), so restarting the server keeps it. Use `npm run demo:reset` to start clean.
-- If you started the server on another port, run commands with `PORT=4000 node demo.js status`.
-- On a deployed server the clock stays at the real date: the commands are refused from anywhere but the server itself.
+- The commands write the demo day to the database (table `app_state`), so they control whichever database your `.env` points at: the local file by default, or the deployed site once `.env` holds the Turso variables (see Deploy). The app picks the change up within a couple of seconds.
+- There is no HTTP endpoint that changes the clock, so nobody can move it from a browser. Anyone who has the database credentials can, so keep them private.
+- Use `npm run demo:reset` to start clean.
 
 ## Points and beans
 
@@ -111,46 +110,46 @@ Beans buy accessories, never progress, so a student can't spend their way past t
 
 ## Database
 
-SQLite, through Node's built-in `node:sqlite` (nothing to install). The server owns it: the browser never touches it, and every rule (points, steps, quiz, shop, photo review) is enforced in `db/store.js`.
+libSQL (SQLite-compatible) through `@libsql/client`: a **Turso** database when deployed on Vercel, or the local file `db/grounded.db` when `TURSO_DATABASE_URL` is not set. The server owns it: the browser never touches it, and every rule (points, steps, quiz, shop, photo review) is enforced in `db/store.js`.
 
 What is stored: accounts, classes, students, project progress, photo results, points and beans, quiz answers, class missions and login sessions. Sample data for the CoffeeBot dashboards (batches, carbon, sponsor report) is **not** in the database yet: it still comes from `js/dashboard-data.js`.
 
-- `npm run db:init` creates an empty database (content only, no accounts). The server also does this by itself on first start.
+- `npm run db:init` creates an empty database (content only, no accounts). The app also does this by itself on the first request after a deploy.
 - `npm run db:demo` creates it with the demo school. `npm run db:reset` / `db:reset:demo` wipe and recreate it. **These delete all data**, so never run them against a live database.
-- Learning content (levels, projects, weeks, accessories, quiz) is re-synced from `js/data.js` on every start, so editing that file and redeploying updates it without touching student data.
-- Inspect it with `sqlite3 db/grounded.db` or any SQLite viewer.
+- Learning content (levels, projects, weeks, accessories, quiz) is re-synced from `public/js/data.js` whenever that file changes, so editing that file and redeploying updates it without touching student data.
+- Inspect it with `sqlite3 db/grounded.db`, or `turso db shell <name>` for the hosted one.
+- Nothing is kept in server memory: pending photo checks, rate limits and the demo clock are tables (`pending_checks`, `rate_hits`, `app_state`), because a Vercel function forgets everything between requests.
 
 Design notes:
 - **Points and beans are a ledger** (`ledger` table) and balances are sums, so every change can be traced. The `student_levels` view gives each student's points, beans and level.
 - **Every submitted photo is stored, and only the student's own teacher can see it.** When a student submits a photo (AI pass or "unsure"), the JPEG (compressed to under 400 kB) is saved in `photo_images`. A photo that fails the check is never submitted, so it is never kept. The teacher sees them on the Photos page (to-review list first, then all photos). Nobody else can open them: the image route checks that the photo belongs to that teacher's class, and students are told their teacher can see what they submit. Deleting a student deletes their photos. `photo_submissions` keeps the AI verdict, confidence, feedback, why it went to a teacher, and the teacher's decision.
-- **Storage grows with use:** about 0.2 to 0.4 MB per photo, so 25 students doing four projects is roughly 30 MB per class. Make sure the Railway volume is large enough, and back it up. These are photos of children, so check your school's or CoffeeBot's data-protection policy (in Singapore, the PDPA) and tell parents and students photos are kept.
+- **Storage grows with use:** about 0.2 to 0.4 MB per photo, so 25 students doing four projects is roughly 30 MB per class. Check your Turso plan's storage limit, and back the database up. These are photos of children, so check your school's or CoffeeBot's data-protection policy (in Singapore, the PDPA) and tell parents and students photos are kept.
 - **Passwords** (students, teachers, CoffeeBot) are hashed with scrypt (`db/auth.js`). Login sessions are a random cookie token; only its hash is in the database.
 - **Photo check:** the browser's on-device check runs first, then the server asks Claude. If the AI is unavailable the photo goes to the teacher instead of passing. With no `ANTHROPIC_API_KEY` (demo mode) the on-device verdict stands, which a student could fake: always set the key in production.
 - Mood and streaks are worked out from the dates in `quiz_answers`.
 
-## Deploy (Railway, about $5 a month)
+## Deploy (Vercel + Turso)
 
-SQLite is a file, so the host needs a **persistent volume**. Without one, the database is wiped on every deploy.
+The static app (`public/`) is served by Vercel's CDN and the backend runs as one serverless function (`api/[...path].js`, which calls `handler.js`). The data lives in a Turso database, because a Vercel function has no disk that lasts.
 
-1. Push the repo to GitHub.
-2. On railway.com: New Project, Deploy from GitHub repo. It detects Node and runs `npm start` (Node 22 comes from `engines` in `package.json`; if it picks an older one, set the variable `NIXPACKS_NODE_VERSION=22`).
-3. Add a **Volume** to the service, mounted at `/data`.
-4. Variables: `DB_FILE=/data/grounded.db`, `ANTHROPIC_API_KEY=...`, `NODE_ENV=production`, and `APP_TZ` if you are not in Singapore. Do **not** set `SEED_DEMO`.
-5. Settings: Networking, Generate Domain. Health check path: `/healthz`.
-6. Open the service shell and create the accounts (see Accounts): `node db/admin.js coffeebot ...`, then school, teacher and class.
+1. Push the repo to GitHub and import it in Vercel. No build command is needed.
+2. In the Vercel project: **Storage** (or the Marketplace), add **Turso**, create a database and connect it to the project. This sets `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Pick a Turso region close to the function (`sin1` = Singapore, set in `vercel.json`).
+3. Environment variables: `ANTHROPIC_API_KEY` (required in production, see Photo check), and `APP_TZ` if you are not in Singapore. Do **not** set `SEED_DEMO`.
+4. Deploy. The first request creates the tables and the demo logins by itself.
+5. Put your local demo data online (once, into an empty database): `vercel env pull .env`, then `npm run db:push`. Or create real accounts instead with `npm run admin -- teacher ...` (see Accounts); with the Turso variables in `.env` the admin commands act on the hosted database.
 
 Notes:
-- Run **one instance** only (SQLite is single-writer, and the photo-check state is in memory).
-- **Back up** the volume: Railway can snapshot it, or copy `/data/grounded.db` (plus the `-wal` file) with `sqlite3 /data/grounded.db ".backup backup.db"`.
-- Updating: push to GitHub and Railway redeploys. Student data lives on the volume and is kept.
-- Any host with a persistent disk works the same way (Fly.io volume, a VPS with Caddy for HTTPS). Render's free tier has no disk, so it would lose the data.
+- Once `.env` holds the Turso variables, `npm start`, `npm run demo:*` and `npm run admin` all use the **hosted** database. Delete those two lines from `.env` to go back to the local file. `db:reset` never touches a hosted database.
+- Several function instances can run at once; that is fine, nothing depends on one process.
+- Updating: push to GitHub and Vercel redeploys. Student data lives in Turso and is kept.
+- Back up with `turso db shell <name> .dump > backup.sql`.
 
 ## Files
 
-- `index.html`, `css/`, `js/` - the app (plain HTML, CSS and JavaScript)
-- `js/data.js` - projects, weeks, levels, quiz questions, the plants students can choose, and demo seed data
-- `js/garden.js` - the plant pictures and the garden scene
-- `server.js` - web server, the AI photo check, and the demo clock
+- `public/` - the app (`index.html`, `css/`, `js/`: plain HTML, CSS and JavaScript), served as static files
+- `public/js/data.js` - projects, weeks, levels, quiz questions, the plants students can choose, and demo seed data
+- `public/js/garden.js` - the plant pictures and the garden scene
+- `handler.js` - the backend as one request handler, plus the AI photo check; `api/[...path].js` runs it on Vercel; `server.js` runs it locally (`npm start`)
 - `api.js` - the JSON API: logins, sessions, one route per action
-- `db/store.js` - the game rules and queries; `db/schema.sql` - the tables; `db/init.js` - create and seed; `db/admin.js` - create accounts; `db/auth.js` - password hashing; `db/clock.js` - the school-day clock; `db/migrations.js` - one-off data fixes that run once when the server starts
+- `db/store.js` - the game rules and queries; `db/schema.sql` - the tables; `db/client.js` - the database connection; `db/init.js` - create and seed; `db/push.js` - copy a local database to Turso; `db/admin.js` - create accounts; `db/auth.js` - password hashing; `db/clock.js` - the school-day clock; `db/migrations.js` - one-off data fixes that run once when the server starts
 - `demo.js` - the terminal control for the demo clock

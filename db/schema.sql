@@ -1,4 +1,4 @@
--- Grounded database (SQLite). Every photo a student submits is kept (photo_images) so their teacher can see it.
+-- Grounded database (SQLite / libSQL, hosted on Turso when deployed). Every photo a student submits is kept (photo_images) so their teacher can see it.
 -- Photos that fail the check are never submitted, so they are never kept.
 PRAGMA foreign_keys = ON;
 
@@ -233,3 +233,26 @@ SELECT sc.id AS school_id, sc.name, co.name AS cohort, COALESCE(SUM(b.kg), 0) AS
 FROM schools sc JOIN cohorts co ON co.id = sc.cohort_id
 LEFT JOIN batches b ON b.school_id = sc.id
 GROUP BY sc.id;
+
+-- ---------- state that used to live in server memory (a serverless function keeps nothing between requests) ----------
+CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS app_state (               -- small key/value store: demo clock, content hash
+  key    TEXT PRIMARY KEY,
+  value  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pending_checks (          -- the latest photo-check result of a student/project, waiting for Submit
+  student_id  INTEGER NOT NULL,
+  project_id  TEXT NOT NULL,
+  ts          INTEGER NOT NULL,                      -- ms since epoch
+  result      TEXT NOT NULL,                         -- JSON of the check result
+  jpeg        BLOB,
+  PRIMARY KEY (student_id, project_id)
+);
+
+CREATE TABLE IF NOT EXISTS rate_hits (               -- sliding-window rate limits and failed-login counts
+  key  TEXT NOT NULL,
+  ts   INTEGER NOT NULL                              -- ms since epoch
+);
+CREATE INDEX IF NOT EXISTS idx_rate_hits ON rate_hits(key, ts);

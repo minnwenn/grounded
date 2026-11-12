@@ -8,7 +8,7 @@ const { realDay, dayToDate } = require("./clock");
 
 const DEMO_PHOTOS = {};   // project id -> placeholder JPEG (db/demo-photos/<id>.jpg), so the teacher's gallery is not empty in the demo
 try { fs.readdirSync(path.join(__dirname, "demo-photos")).forEach(f => { DEMO_PHOTOS[f.replace(/\.jpg$/, "")] = fs.readFileSync(path.join(__dirname, "demo-photos", f)); }); } catch (e) {}
-const loadDash = () => vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../js/dashboard-data.js"), "utf8") + ";DASH", { localStorage: { getItem() { return null; } } });
+const loadDash = () => vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../public/js/dashboard-data.js"), "utf8") + ";DASH", { localStorage: { getItem() { return null; } } });
 
 function rng(seed) {   // mulberry32
   let a = seed >>> 0;
@@ -53,32 +53,33 @@ const FEEDBACK = {
   p6: ["That looks like your coffee ground scrub. Well done!", "Nice scrub in a clean container.", "Clear photo of the finished scrub. Great work!"]
 };
 
-function seedDemo(db, D) {
+async function seedDemo(db, D) {
   const DASH = loadDash(), r = rng(20260921), today = realDay(), pw = hashPassword("demo");
-  const run = (sql, ...a) => db.prepare(sql).run(...a), id = x => Number(x.lastInsertRowid), pick = a => a[Math.floor(r() * a.length)];
+  const id = x => x.lastInsertRowid, pick = a => a[Math.floor(r() * a.length)];
   const order = D.weeks.map(w => w.projects[0]), pts = Object.fromEntries(D.projects.map(p => [p.id, p.pts]));
   const buyable = D.accessories.filter(a => a.how === "buy");
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const stamp = (day, h = 12) => dayToDate(day) + " " + String(h).padStart(2, "0") + ":" + String(Math.floor(r() * 60)).padStart(2, "0") + ":00";
 
-  db.exec("BEGIN");
-  try {
+  const outer = db;                                   // everything below runs in one transaction on `db` (rebound to the tx)
+  return outer.tx(async db => {
+    const run = (sql, ...a) => db.run(sql, ...a);
     const cohort = {}, school = {};
-    [...new Set(D.schools.map(s => s.cohort))].forEach(c => cohort[c] = id(run("INSERT INTO cohorts(name) VALUES (?)", c)));
-    D.schools.forEach(s => school[s.id] = id(run("INSERT INTO schools(name,cohort_id) VALUES (?,?)", SCHOOL_NAMES[s.id] || s.name, cohort[s.cohort])));
-    run("INSERT INTO users(role,name,email,password_hash) VALUES ('coffeebot','CoffeeBot team','team@coffeebot.example',?)", pw);
+    for (const c of [...new Set(D.schools.map(s => s.cohort))]) cohort[c] = id(await run("INSERT INTO cohorts(name) VALUES (?)", c));
+    for (const s of D.schools) school[s.id] = id(await run("INSERT INTO schools(name,cohort_id) VALUES (?,?)", SCHOOL_NAMES[s.id] || s.name, cohort[s.cohort]));
+    await run("INSERT INTO users(role,name,email,password_hash) VALUES ('coffeebot','CoffeeBot team','team@coffeebot.example',?)", pw);
 
     let teacherNo = 0, firstTeacher = null;
-    D.schools.forEach(sc => {
+    for (const sc of D.schools) {
       const sid = sc.id, dash = DASH.school(sid), classes = DASH.classes(sid), [abbr, domain] = SCHOOL_TAG[sid];
       const startDay = today - 48 + DASH.cohortStartWeek(sid) * 7;   // cohort A started about 7 weeks ago, cohort B about 4
-      classes.forEach((c, ci) => {
+      for (const [ci, c] of classes.entries()) {
         const [tname, local] = TEACHERS[teacherNo++ % TEACHERS.length];
         const email = sid === "s1" && ci === 0 ? "teacher_demo@demo.edu.sg" : local + "@" + domain + ".example";   // the main demo teacher has a short, memorable login
-        const teacher = id(run("INSERT INTO users(role,name,email,password_hash,school_id) VALUES ('teacher',?,?,?,?)", tname, email, pw, school[sid]));
+        const teacher = id(await run("INSERT INTO users(role,name,email,password_hash,school_id) VALUES ('teacher',?,?,?,?)", tname, email, pw, school[sid]));
         if (!firstTeacher) firstTeacher = email;
         const code = sid === "s1" && ci === 0 ? "demosec-1D" : abbr + "-" + c.name.replace("Sec ", "") + Array.from({ length: 2 }, () => alphabet[Math.floor(r() * alphabet.length)]).join("");
-        const cls = id(run("INSERT INTO classes(school_id,teacher_id,name,code) VALUES (?,?,?,?)", school[sid], teacher, c.name, code));
+        const cls = id(await run("INSERT INTO classes(school_id,teacher_id,name,code) VALUES (?,?,?,?)", school[sid], teacher, c.name, code));
 
         const used = new Set(); let steps = 0, verifiedCount = 0, pendingLeft = (ci === 0 ? dash.waiting.length + (sid === "s1" ? 1 : 0) : 0), approvedByTeacher = sid === "s1" && ci === 0;
         for (let i = 0; i < c.students; i++) {
@@ -89,41 +90,41 @@ function seedDemo(db, D) {
           const lastDays = !engaged && r() < 0.5 ? null : recent ? (r() < 0.7 ? 0 : 1) : 2 + Math.floor(r() * 9);
           const streak = lastDays === null ? 0 : recent ? Math.min(20, 1 + Math.floor(-Math.log(1 - r()) * dash.streak)) : 0;
           const joined = startDay + Math.floor(r() * 2);
-          const stu = id(run("INSERT INTO students(class_id,name,password_hash,created_at,last_active) VALUES (?,?,?,?,?)", cls, name, pw, stamp(joined, 8), lastDays === null ? null : dayToDate(today - lastDays)));
-          run("INSERT INTO buddies VALUES (?,?)", stu, streak);
+          const stu = id(await run("INSERT INTO students(class_id,name,password_hash,created_at,last_active) VALUES (?,?,?,?,?)", cls, name, pw, stamp(joined, 8), lastDays === null ? null : dayToDate(today - lastDays)));
+          await run("INSERT INTO buddies VALUES (?,?)", stu, streak);
 
           let beans = 0, points = 0;
-          const earn = (kind, delta, reason, pid, day) => { run("INSERT INTO ledger(student_id,kind,delta,reason,project_id,created_at) VALUES (?,?,?,?,?,?)", stu, kind, delta, reason, pid, stamp(Math.min(day, today), 15)); if (kind === "beans") beans += delta; else points += delta; };
+          const earn = async (kind, delta, reason, pid, day) => { await run("INSERT INTO ledger(student_id,kind,delta,reason,project_id,created_at) VALUES (?,?,?,?,?,?)", stu, kind, delta, reason, pid, stamp(Math.min(day, today), 15)); if (kind === "beans") beans += delta; else points += delta; };
 
           for (let k = 0; k < v; k++) {                                                // verified projects
             const pid = order[k], done = Math.min(today - 1, startDay + 6 + k * 7 + Math.floor(r() * 5));
-            run("INSERT INTO student_projects(student_id,project_id,steps_done,started_at,completed_at) VALUES (?,?,5,?,?)", stu, pid, dayToDate(done - 5), dayToDate(done));
-            earn("beans", 20, "step", pid, done - 3);
+            await run("INSERT INTO student_projects(student_id,project_id,steps_done,started_at,completed_at) VALUES (?,?,5,?,?)", stu, pid, dayToDate(done - 5), dayToDate(done));
+            await earn("beans", 20, "step", pid, done - 3);
             const teacherCase = approvedByTeacher && k === 0 && i > 2;                   // one photo the AI was unsure about and the teacher approved
             if (teacherCase) {
               approvedByTeacher = false;
-              run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,note,mode,status,reviewed_by,reviewed_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+              await run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,note,mode,status,reviewed_by,reviewed_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 stu, pid, "unsure", 0.58, "Not sure this shows your " + D.projects.find(p => p.id === pid).name.toLowerCase() + ". Your teacher will take a look.", "AI unsure (confidence 0.58)", "ai", "approved", teacher, stamp(done + 1, 9), stamp(done, 14));
-              earn("points", pts[pid], "teacher_approved", pid, done + 1);
+              await earn("points", pts[pid], "teacher_approved", pid, done + 1);
             } else {
-              run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,mode,status,created_at) VALUES (?,?,?,?,?,?,?,?)",
+              await run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,mode,status,created_at) VALUES (?,?,?,?,?,?,?,?)",
                 stu, pid, "pass", Math.round((0.8 + r() * 0.17) * 100) / 100, pick(FEEDBACK[pid]), "ai", "approved", stamp(done, 14));
-              earn("points", pts[pid], "photo_verified", pid, done);
+              await earn("points", pts[pid], "photo_verified", pid, done);
             }
-            earn("beans", 10, "photo_verified", pid, done);
+            await earn("beans", 10, "photo_verified", pid, done);
             steps += 5; verifiedCount++;
           }
           if (inprog >= 0) {                                                           // the project they are working on now
             const pid = order[inprog];
             let n = r() < 0.25 ? 4 : Math.floor(r() * 4), pending = false;
             if (pendingLeft > 0) { pending = true; pendingLeft--; n = 5; }   // the first few in-progress students have a photo waiting for the teacher
-            run("INSERT INTO student_projects(student_id,project_id,steps_done,started_at) VALUES (?,?,?,?)", stu, pid, n, dayToDate(today - 1 - Math.floor(r() * 6)));
-            earn("beans", Math.min(n, 4) * 5, "step", pid, today - 1);
+            await run("INSERT INTO student_projects(student_id,project_id,steps_done,started_at) VALUES (?,?,?,?)", stu, pid, n, dayToDate(today - 1 - Math.floor(r() * 6)));
+            await earn("beans", Math.min(n, 4) * 5, "step", pid, today - 1);
             if (pending) {
               const conf = pick([0.42, 0.55, 0.47]), retakes = r() < 0.3;
-              run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,note,mode,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+              await run("INSERT INTO photo_submissions(student_id,project_id,verdict,confidence,feedback,note,mode,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 stu, pid, "unsure", conf, "Not sure this shows your project. Your teacher will take a look.", retakes ? "Failed the photo check 4 times" : "AI unsure (confidence " + conf.toFixed(2) + ")", "ai", "pending", stamp(today - 1, 16));
-              earn("beans", 10, "photo_verified", pid, today - 1);
+              await earn("beans", 10, "photo_verified", pid, today - 1);
             }
             steps += n === 5 ? 5 : n;
           }
@@ -132,32 +133,31 @@ function seedDemo(db, D) {
             const acc = DASH.quiz(sid)[3] / 100, last = today - lastDays;
             for (let k = 0; k < Math.max(1, streak); k++) {
               const day = last - k, qi = ((day % D.quiz.length) + D.quiz.length) % D.quiz.length, q = D.quiz[qi], ok = r() < acc;
-              run("INSERT OR IGNORE INTO quiz_answers VALUES (?,?,?,?,?)", stu, dayToDate(day), qi + 1, ok ? Math.max(0, q.a) : (Math.max(0, q.a) + 1) % q.o.length, q.a < 0 || ok ? 1 : 0);
-              earn("beans", q.a < 0 || ok ? 5 : 1, "quiz", null, day);
+              await run("INSERT OR IGNORE INTO quiz_answers VALUES (?,?,?,?,?)", stu, dayToDate(day), qi + 1, ok ? Math.max(0, q.a) : (Math.max(0, q.a) + 1) % q.o.length, q.a < 0 || ok ? 1 : 0);
+              await earn("beans", q.a < 0 || ok ? 5 : 1, "quiz", null, day);
             }
           }
           if (beans >= 25 && r() < 0.4) {                                              // some students have spent beans on their buddy
             const a = pick(buyable.filter(x => x.cost <= beans));
-            if (a) { earn("beans", -a.cost, "purchase", null, today - 1 - Math.floor(r() * 5)); run("INSERT INTO student_accessories VALUES (?,?,1)", stu, a.id); }
+            if (a) { await earn("beans", -a.cost, "purchase", null, today - 1 - Math.floor(r() * 5)); await run("INSERT INTO student_accessories VALUES (?,?,1)", stu, a.id); }
           }
         }
         // class missions: partly done, so the progress bars have something to show
         const g = (n, step, cap) => Math.min(Math.ceil(n * 1.35 / step) * step, Math.round(cap / step) * step);
-        run("INSERT INTO missions(class_id,name,goal,unit,created_by) VALUES (?,?,?,?,?)", cls, "Complete " + g(steps, 10, c.students * 17) + " project steps as a class", g(steps, 10, c.students * 17), "steps", teacher);
-        run("INSERT INTO missions(class_id,name,goal,unit,created_by) VALUES (?,?,?,?,?)", cls, "Get " + g(verifiedCount, 5, c.students * 3.4) + " projects verified together", g(verifiedCount, 5, c.students * 3.4), "projects", teacher);
-      });
-    });
+        await run("INSERT INTO missions(class_id,name,goal,unit,created_by) VALUES (?,?,?,?,?)", cls, "Complete " + g(steps, 10, c.students * 17) + " project steps as a class", g(steps, 10, c.students * 17), "steps", teacher);
+        await run("INSERT INTO missions(class_id,name,goal,unit,created_by) VALUES (?,?,?,?,?)", cls, "Get " + g(verifiedCount, 5, c.students * 3.4) + " projects verified together", g(verifiedCount, 5, c.students * 3.4), "projects", teacher);
+      }
+    }
 
-    D.batches.forEach(b => {
-      run("INSERT INTO batches VALUES (?,?,?,?,?,?)", b.id, school[b.school], cohort[b.cohort], b.outlet, b.kg, b.events.some(e => e[2] === "wait") ? 0 : 1);
-      b.events.forEach(e => run("INSERT INTO batch_events(batch_id,happened,text,done) VALUES (?,?,?,?)", b.id, e[0] === "pending" ? null : e[0], e[1], e[2] === "ok" ? 1 : 0));
-    });
+    for (const b of D.batches) {
+      await run("INSERT INTO batches VALUES (?,?,?,?,?,?)", b.id, school[b.school], cohort[b.cohort], b.outlet, b.kg, b.events.some(e => e[2] === "wait") ? 0 : 1);
+      for (const e of b.events) await run("INSERT INTO batch_events(batch_id,happened,text,done) VALUES (?,?,?,?)", b.id, e[0] === "pending" ? null : e[0], e[1], e[2] === "ok" ? 1 : 0);
+    }
     // give every demo submission its sample image
-    db.prepare("SELECT id, project_id FROM photo_submissions").all().forEach(r => { if (DEMO_PHOTOS[r.project_id]) run("INSERT OR IGNORE INTO photo_images(submission_id,jpeg) VALUES (?,?)", r.id, DEMO_PHOTOS[r.project_id]); });
-    require("./migrations").plantDemoGarden(db);          // the garden: a plant for most finished projects
-    db.exec("COMMIT");
+    for (const r of await db.all("SELECT id, project_id FROM photo_submissions")) if (DEMO_PHOTOS[r.project_id]) await run("INSERT OR IGNORE INTO photo_images(submission_id,jpeg) VALUES (?,?)", r.id, DEMO_PHOTOS[r.project_id]);
+    await require("./migrations").plantDemoGarden(db);          // the garden: a plant for most finished projects
     return { teacher: firstTeacher };
-  } catch (e) { db.exec("ROLLBACK"); throw e; }
+  });
 }
 
 module.exports = { seedDemo, SCHOOL_NAMES };

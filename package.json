@@ -3,22 +3,24 @@
   "private": true,
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
-    "demo": "node demo.js",
-    "demo:next-day": "node demo.js next-day",
-    "demo:evening": "node demo.js evening",
-    "demo:morning": "node demo.js morning",
-    "demo:reset": "node demo.js reset",
-    "db:init": "node --no-warnings db/init.js",
+    "demo": "node --env-file-if-exists=.env demo.js",
+    "demo:next-day": "node --env-file-if-exists=.env demo.js next-day",
+    "demo:evening": "node --env-file-if-exists=.env demo.js evening",
+    "demo:morning": "node --env-file-if-exists=.env demo.js morning",
+    "demo:reset": "node --env-file-if-exists=.env demo.js reset",
+    "db:init": "node --no-warnings --env-file-if-exists=.env db/init.js",
     "db:reset": "node --no-warnings db/init.js --force",
     "db:demo": "node --no-warnings db/init.js --demo",
     "db:reset:demo": "node --no-warnings db/init.js --demo --force",
-    "admin": "node --no-warnings db/admin.js"
+    "db:push": "node --no-warnings --env-file=.env db/push.js",
+    "admin": "node --no-warnings --env-file-if-exists=.env db/admin.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
+    "@libsql/client": "^0.18.0",
     "zod": "^4.6.7"
   }
 }
