@@ -133,7 +133,7 @@ Design notes:
 The static app (`public/`) is served by Vercel's CDN and the backend runs as one serverless function (`api/[...path].js`, which calls `handler.js`). The data lives in a Turso database, because a Vercel function has no disk that lasts.
 
 1. Push the repo to GitHub and import it in Vercel. No build command is needed.
-2. In the Vercel project: **Storage** (or the Marketplace), add **Turso**, create a database and connect it to the project. This sets `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Pick a Turso region close to the function (`sin1` = Singapore, set in `vercel.json`).
+2. In the Vercel project: **Storage** (or the Marketplace), add **Turso**, create a database and connect it to the project. This sets `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Pick a Turso region close to the function (the function region is set in `vercel.json` and should match: `iad1` for aws-us-east-1).
 3. Environment variables: `ANTHROPIC_API_KEY` (required in production, see Photo check), and `APP_TZ` if you are not in Singapore. Do **not** set `SEED_DEMO`.
 4. Deploy. The first request creates the tables and the demo logins by itself.
 5. Put your local demo data online (once, into an empty database): `vercel env pull .env`, then `npm run db:push`. Or create real accounts instead with `npm run admin -- teacher ...` (see Accounts); with the Turso variables in `.env` the admin commands act on the hosted database.

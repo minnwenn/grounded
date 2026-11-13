@@ -11,6 +11,9 @@
  *   tx(async t => ...)   interactive transaction; t has get/all/run. Commits if the callback returns, rolls back if it throws.
  */
 const path = require("path");
+// The Vercel Turso integration may add a prefix (DATABASE_TURSO_DATABASE_URL); accept either spelling.
+process.env.TURSO_DATABASE_URL ||= process.env.DATABASE_TURSO_DATABASE_URL;
+process.env.TURSO_AUTH_TOKEN ||= process.env.DATABASE_TURSO_AUTH_TOKEN;
 const { createClient } = require("@libsql/client");
 
 const ROOT = path.join(__dirname, "..");

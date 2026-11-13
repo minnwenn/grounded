@@ -194,9 +194,9 @@ function landing(){
   '<h1>Give coffee grounds<br>a second life.</h1>'+
   '<p style="max-width:56ch">A pixel-sized game that walks students through reusing coffee grounds, helps teachers see progress, and gives CoffeeBot verified impact. Log in to get started.</p></section>'+
   '<div class="grid g3">'+
-  roleCard("olive","Students","Follow a winding path of project steps, care for your Bean Buddy and grow a class forest.","#/login?role=student","Log in as student")+
-  roleCard("rose","Schools","Class code, participation, quizzes, flagged photos and class missions in one place.","#/login?role=teacher","Log in as teacher")+
-  roleCard("gold","CoffeeBot","Verified kg by school, cohort and batch, plus a handprint estimate and sponsor report.","#/login?role=coffeebot","Log in as CoffeeBot")+
+  roleCard("olive","Students","Create a new account: class code <b>demo</b>, plus your own name and password.","#/login?role=student","Log in as student")+
+  roleCard("rose","Schools","Email <b>demo@demo.com</b><br>Password <b>demo</b>","#/login?role=teacher","Log in as teacher")+
+  roleCard("gold","CoffeeBot","Email <b>demo@coffeebot.com</b><br>Password <b>demo</b>","#/login?role=coffeebot","Log in as CoffeeBot")+
   '</div>';
 }
 function roleCard(c,t,d,href,cta){return '<a class="card role-card '+c+'" href="'+href+'"><h2>'+t+'</h2><p>'+d+'</p><span class="btn btn-'+(c==="gold"?"gold":"")+'">'+cta+'</span></a>';}
