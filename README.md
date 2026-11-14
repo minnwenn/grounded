@@ -1,5 +1,20 @@
 # Grounded
 
+## Login information
+
+**Teacher Login**
+- Email: demo@demo.com
+- Password: demo
+
+**Student** (please create a new account)
+- Class code: demo
+- Name: `<your name>`
+- Password: `<your password>`
+
+**CoffeeBot Login**
+- Email: demo@coffeebot.com
+- Password: demo
+
 A lightweight web app for CoffeeBot, schools and students: a 4-week journey of coffee ground projects, a Bean Buddy, class gardens, teacher review and a CoffeeBot dashboard. Student and teacher data is stored on the server. The CoffeeBot dashboards (batches, carbon, sponsor report) still show sample data.
 
 ## Run locally
